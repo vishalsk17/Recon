@@ -1,0 +1,214 @@
+# =====================================================================
+# Recovery policy configuration  —  POLICY_VERSION is stamped into every
+# audit record, so any decision can be replayed against the exact rules
+# that produced it. Change a number here and the version must change too.
+# =====================================================================
+policy_version: "3.1.0"
+
+# ---------------------------------------------------------------------
+# Execution mode.
+#
+# dry_run: true means adapters simulate every side effect and record what
+# they *would* have done. This is the default and it is deliberate: a
+# recovery agent that can move money or message customers should never do
+# so because someone forgot a flag. Turning it off requires BOTH
+# dry_run: false here AND the RECOVERY_AGENT_ALLOW_LIVE=1 environment
+# variable (see src/adapters/base.py).
+# ---------------------------------------------------------------------
+execution:
+  dry_run: true
+  # A global halt. If this file exists, the agent refuses to execute any
+  # action at all, even in dry-run. Ops kill switch.
+  kill_switch_file: "HALT"
+
+# ---------------------------------------------------------------------
+# Money guardrails. Every one of these is a hard ceiling, checked after
+# the economics layer has already ranked actions — economics can only
+# ever propose, guardrails dispose.
+# ---------------------------------------------------------------------
+limits:
+  # Any single event above this value never auto-executes, no matter how
+  # confident the model is or how good the expected value looks.
+  max_auto_approve_amount_inr: 50000
+
+  # Hard cap on any discount the agent may offer without a human.
+  max_discount_pct: 10
+
+  # Total discount the agent may commit across one sweep, as a share of
+  # the total value it is working. Stops a "discount everything" failure
+  # mode even if each individual discount is within cap.
+  max_discount_budget_pct_of_at_risk: 2.0
+
+  # Below this classification confidence the agent will not act on its
+  # own guess — it routes to human review instead.
+  min_confidence_to_act: 0.55
+
+  # An action must clear this much expected net recovery (INR) to be
+  # worth doing. Anything below is a rounding error not worth the
+  # customer-experience cost, so the agent deliberately does nothing.
+  min_expected_net_recovery_inr: 25
+
+# ---------------------------------------------------------------------
+# Retry discipline.
+#
+# This block exists as much for safety as for economics. Uncapped or
+# rapid-fire retries against an issuer look indistinguishable from card
+# testing, get a merchant rate-limited or flagged, and harm the customer.
+# The caps below are non-negotiable and enforced in src/guardrails.py.
+# ---------------------------------------------------------------------
+retries:
+  max_attempts_per_payment: 3
+  min_hours_between_attempts: 6
+  # Sweep-wide ceiling on retry volume. Prevents a retry storm even if
+  # per-event logic somehow permitted one.
+  max_retries_per_sweep: 500
+  # Root causes that must never be retried, under any confidence.
+  never_retry_root_causes:
+    - fraud_suspected
+    - expired_card
+    - invalid_details
+
+  # Retries are also blocked whenever the fraud posterior exceeds this,
+  # even when fraud is not the top predicted cause.
+  #
+  # Checking only the top-1 label is not enough: a distribution of
+  # {insufficient_funds: 0.41, fraud_suspected: 0.39} predicts
+  # "insufficient_funds" and would sail past the list above, despite the
+  # model being nearly as suspicious as it is confident. Retrying a card
+  # that has a two-in-five chance of being stolen is not a recovery
+  # strategy. This reads the whole posterior instead of its argmax.
+  max_fraud_probability_for_retry: 0.15
+
+# ---------------------------------------------------------------------
+# Customer contact discipline. Consent and quiet hours are checked
+# before any outreach channel is even considered a candidate action.
+# ---------------------------------------------------------------------
+contact:
+  max_contacts_per_customer_per_7d: 2
+  min_hours_between_contacts: 24
+  # Local-time window in which outreach is allowed (IST). Outside this
+  # window the agent schedules for the next permitted slot rather than
+  # sending. No 3am payment reminders.
+  quiet_hours_start: 21   # 21:00
+  quiet_hours_end: 9      # 09:00
+  # Channels requiring explicit opt-in before use.
+  consent_required_channels:
+    - whatsapp
+    - sms
+  honour_dnd: true
+
+# ---------------------------------------------------------------------
+# Receivables / collections.
+# ---------------------------------------------------------------------
+receivables:
+  min_days_overdue_for_collections: 90
+  # Collections is never fully automated. The agent may only *recommend*
+  # it, and a human must sign off. Keeping this as config rather than a
+  # constant makes the choice explicit and auditable.
+  collections_requires_human_signoff: true
+  never_auto_chase_root_causes:
+    - dispute_pending
+    - invoice_error
+
+# ---------------------------------------------------------------------
+# Unit economics. These drive the expected-net-recovery calculation in
+# src/economics.py. Costs are in INR unless noted.
+# ---------------------------------------------------------------------
+economics:
+  # Default gross margin assumption, overridden per-customer where the
+  # customer dimension supplies one.
+  default_gross_margin_pct: 35
+
+  # What recovery is actually worth on each surface. This is not a detail —
+  # getting it wrong misprices two of the three surfaces by roughly 3x.
+  #
+  #   margin — the sale has not happened yet. A recovered failed payment or
+  #     abandoned cart earns the gross margin on the order, not its face
+  #     value, because the cost of goods is still to come.
+  #   full — the sale already happened. An overdue invoice covers goods or
+  #     services already delivered, so the cost is sunk and the revenue is
+  #     already recognised. Collecting it avoids writing off the whole
+  #     amount as bad debt, so the entire invoice value is at stake.
+  #
+  # The practical effect is that the agent will rightly spend far more
+  # effort per rupee on receivables than on carts.
+  value_basis:
+    payment_failure: margin
+    checkout_abandonment: margin
+    overdue_receivable: full
+
+  # What each action costs to attempt, win or lose.
+  action_cost_inr:
+    do_nothing: 0.0
+    immediate_retry: 2.5          # gateway attempt fee
+    delayed_retry: 2.5
+    prompt_new_payment_method: 1.2   # email/push
+    send_reminder_email: 0.8
+    send_reminder_whatsapp: 2.0
+    offer_bounded_discount: 1.0      # the discount itself is priced separately
+    automated_reminder: 0.8
+    automated_reminder_with_payment_plan_offer: 3.5   # includes ops handling
+    escalate_to_collections: 250.0   # agency/legal handling cost
+    stop_and_flag_fraud: 0.0
+    request_human_review: 40.0       # ~15 min of an analyst's time
+
+  # Extra penalty applied when an action fails, beyond its attempt cost.
+  # A failed retry carries issuer-reputation risk; a failed message
+  # carries goodwill cost. Makes the agent appropriately reluctant.
+  failure_penalty_inr:
+    immediate_retry: 4.0
+    delayed_retry: 3.0
+    send_reminder_whatsapp: 6.0
+    offer_bounded_discount: 3.0
+    escalate_to_collections: 400.0   # relationship damage if unwarranted
+
+  # Customer-experience cost of contacting someone who has already been
+  # contacted recently, per prior contact in the window. Scales the
+  # agent away from pestering people.
+  contact_fatigue_penalty_inr: 12.0
+
+  # Weight on retained future value when an intervention succeeds.
+  # Expressed as a fraction of the customer's estimated annual value.
+  ltv_retention_weight: 0.15
+
+  # Expected cost of a chargeback, as a multiple of the transaction amount.
+  # A recovered fraudulent payment is not revenue — it is a chargeback with
+  # a fee and a dispute-ratio consequence on top of the refunded principal,
+  # so 1.5x is conservative rather than punitive.
+  #
+  # This term is what makes stopping suspected fraud the highest-value
+  # action on the economics alone, before any rule is consulted. Fraud is
+  # then *also* on retries.never_retry_root_causes, so the arithmetic and
+  # the guardrail reach the same conclusion independently. That redundancy
+  # is deliberate: a miscalibrated probability must not be able to make
+  # retrying suspected fraud look profitable.
+  chargeback_cost_multiplier: 1.5
+
+# ---------------------------------------------------------------------
+# Bounded LLM usage. The LLM never selects, prices or approves an
+# action — it only renders already-decided facts into language. These
+# flags control what it is allowed to touch at all.
+# ---------------------------------------------------------------------
+llm:
+  model: "claude-sonnet-4-5"
+  max_tokens: 700
+  # Roles the LLM is permitted to fill. Anything not listed is refused
+  # by src/narrator.py regardless of what a caller asks for.
+  permitted_roles:
+    - draft_customer_message
+    - summarise_case_for_reviewer
+    - explain_decision_plainly
+  # Every generated customer-facing message is checked against these
+  # before it is ever returned. See src/narrator.py::validate_draft.
+  forbidden_output_patterns:
+    - "legal action"
+    - "lawsuit"
+    - "court"
+    - "police"
+    - "credit score"
+    - "blacklist"
+    - "final warning"
+    - "immediately or"
+    - "guaranteed"
+    - "act now or lose"
+  max_message_chars: 700

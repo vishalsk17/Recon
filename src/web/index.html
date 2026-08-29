@@ -1,0 +1,1707 @@
+<!DOCTYPE html>
+<!--
+  Recovery Command Centre — the operator surface for the revenue recovery agent.
+
+  One file, no build step, no external requests. That is not minimalism for its
+  own sake: the server sends a Content-Security-Policy with `default-src 'none'`
+  and no remote origins, so a CDN font or chart library would simply be blocked.
+  Everything here is system fonts and hand-built SVG.
+
+  Two properties in this file are load-bearing rather than stylistic.
+
+  1. No server data ever reaches the DOM as markup. Every value is written with
+     textContent through the `el()` helper; `innerHTML` is never assigned a
+     string containing anything that came back from the API. Decision records
+     carry root-cause names, refusal reasons and customer identifiers that
+     originate in data files, and a dashboard that interpolated those into HTML
+     would be an injection sink pointed at the one screen an operator trusts.
+
+  2. Approvals cannot be anonymous. The operator's name is required before the
+     approve or decline control will fire, and it is sent in the X-Operator
+     header on every request rather than remembered globally. This is not
+     authentication — the server says so plainly too — it records who claimed
+     responsibility, and makes that claim explicit each time.
+
+  Design notes, for anyone editing this later. The colour logic is an
+  accounting one: money recovered is set in ledger green, and anything the
+  agent did *not* do is set in claret inside parentheses, the way a statement
+  writes a debit. Amounts use en-IN grouping (lakh and crore), because that is
+  how the numbers would be read by the people this is for. The refusal column
+  is given the same weight as the money column on purpose — a system whose main
+  claim is restraint should show what it declined to do as prominently as what
+  it did.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Recovery Command Centre</title>
+<style>
+  :root {
+    color-scheme: light;
+
+    /* Ledger ink and stock. Deliberately blue-grey rather than cream. */
+    --ink:        #0B1533;
+    --ink-soft:   #47526E;
+    --ink-faint:  #7A849C;
+    --paper:      #EEF1F7;
+    --card:       #FFFFFF;
+    --rule:       #C9D2E3;
+    --rule-soft:  #E2E7F1;
+
+    /* Accounting conventions: credit, debit, and pending. */
+    --credit:     #0F6E4F;
+    --debit:      #A3324B;
+    --gate:       #8A5A00;
+    --gate-wash:  #FDF6E7;
+    --credit-wash:#EDF6F1;
+    --debit-wash: #FAEEF1;
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono",
+            "Roboto Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+            Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Numbers are the voice of this page: monospace, tabular, right-aligned. */
+  .num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .credit { color: var(--credit); }
+  .debit  { color: var(--debit); }
+  .gated  { color: var(--gate); }
+
+  a { color: var(--ink); }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  /* ---------- statement strip ---------- */
+
+  .statement {
+    background: var(--ink);
+    color: #F3F6FC;
+    padding: 18px 24px 16px;
+  }
+  .statement-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 14px 20px;
+  }
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 15px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 0;
+  }
+  .statement-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-left: auto;
+    align-items: center;
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border: 1px solid rgba(243,246,252,0.32);
+    border-radius: 2px;
+    color: #DCE4F2;
+    background: none;
+  }
+  .chip-strong {
+    border-color: rgba(243,246,252,0.75);
+    color: #FFFFFF;
+  }
+  button.chip { cursor: pointer; font-family: var(--mono); }
+  button.chip:hover { background: rgba(243,246,252,0.12); }
+  .chip-ok   { border-color: #4FBF92; color: #A8E6CB; }
+  .chip-bad  { border-color: #E0899C; color: #F6C9D4; }
+
+  .statement-line {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #98A6C4;
+    margin-top: 8px;
+    word-break: break-all;
+  }
+
+  /* ---------- layout ---------- */
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px 64px; }
+
+  .reckoning {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 20px;
+    margin: 22px 0 26px;
+  }
+
+  .block {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 18px 20px 16px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 12px;
+  }
+
+  /* The signature element: a two-sided ledger where refusals are set with the
+     same weight as recoveries. */
+  .ledger { width: 100%; border-collapse: collapse; }
+  .ledger th, .ledger td { padding: 5px 0; vertical-align: baseline; }
+  .ledger th {
+    text-align: left;
+    font-weight: 400;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+  .ledger td.num { width: 40%; font-size: 15px; }
+  .ledger tr.total th, .ledger tr.total td {
+    border-top: 1px solid var(--ink);
+    padding-top: 8px;
+    font-weight: 600;
+  }
+  .ledger tr.section-gap th, .ledger tr.section-gap td { padding-top: 16px; }
+  .ledger .sub {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+  }
+
+  .headline-num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 2px 0 4px;
+  }
+  .headline-note { font-size: 13px; color: var(--ink-soft); margin: 0; }
+
+  .verdict {
+    margin-top: 14px;
+    padding-top: 13px;
+    border-top: 1px solid var(--rule-soft);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- tabs ---------- */
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 0;
+  }
+  .tab {
+    appearance: none;
+    background: none;
+    border: 1px solid transparent;
+    border-bottom: none;
+    padding: 9px 15px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 3px 3px 0 0;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] {
+    background: var(--card);
+    border-color: var(--rule);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .tab .count {
+    font-size: 10px;
+    color: var(--gate);
+    margin-left: 6px;
+    letter-spacing: 0;
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+    padding: 20px;
+    min-height: 340px;
+  }
+
+  /* ---------- tables ---------- */
+
+  table.grid { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.grid th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 400;
+    border-bottom: 1px solid var(--rule);
+    padding: 0 10px 7px;
+    white-space: nowrap;
+  }
+  table.grid th.num, table.grid td.num { text-align: right; }
+  table.grid td {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 9px 10px;
+    vertical-align: top;
+  }
+  table.grid tbody tr.row { cursor: pointer; }
+  table.grid tbody tr.row:hover { background: #F7F9FD; }
+  table.grid tbody tr.row.on { background: #F2F5FC; }
+  table.grid tbody tr.row.on td:first-child { box-shadow: inset 3px 0 0 var(--ink); }
+
+  .cause { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+  .id    { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .pill-gate   { background: var(--gate-wash);   color: var(--gate); }
+  .pill-auto   { background: var(--credit-wash); color: var(--credit); }
+  .pill-none   { background: #F1F3F8;            color: var(--ink-faint); }
+  .pill-refuse { background: var(--debit-wash);  color: var(--debit); }
+
+  /* ---------- evidence drawer ---------- */
+
+  .layout-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+    gap: 20px;
+    align-items: start;
+  }
+  .drawer {
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: #FBFCFE;
+    padding: 16px 17px;
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+  }
+  .drawer h3 {
+    font-size: 15px;
+    margin: 0 0 3px;
+    font-weight: 600;
+  }
+  .drawer h4 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 18px 0 8px;
+    font-weight: 400;
+  }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; }
+  .kv dt { color: var(--ink-soft); }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; word-break: break-word; }
+
+  .option {
+    border-left: 2px solid var(--rule);
+    padding: 7px 0 7px 11px;
+    margin-bottom: 3px;
+  }
+  .option.chosen { border-left-color: var(--credit); background: var(--credit-wash); }
+  .option.blocked { border-left-color: var(--debit); }
+  .option-head { display: flex; gap: 10px; align-items: baseline; }
+  .option-name { flex: 1; font-size: 13px; }
+  .option-why {
+    font-size: 12px;
+    color: var(--debit);
+    margin-top: 2px;
+  }
+  .option-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 2px; }
+
+  pre.trace {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    background: #F4F6FB;
+    border: 1px solid var(--rule-soft);
+    border-radius: 2px;
+    padding: 10px 11px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- controls ---------- */
+
+  .btn {
+    appearance: none;
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 7px 13px;
+    border-radius: 2px;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: #FFF;
+    cursor: pointer;
+  }
+  .btn:hover { background: #16224A; }
+  .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .btn-quiet { background: none; color: var(--ink); }
+  .btn-quiet:hover { background: #EDF0F7; }
+  .btn-decline { border-color: var(--debit); background: none; color: var(--debit); }
+  .btn-decline:hover { background: var(--debit-wash); }
+
+  .field { margin: 10px 0 12px; }
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 4px;
+  }
+  .field input {
+    width: 100%;
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 7px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: #FFF;
+    color: var(--ink);
+  }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+
+  .notice {
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 2px;
+    border-left: 3px solid;
+    margin: 10px 0;
+    background: #F4F6FB;
+    border-color: var(--rule);
+    color: var(--ink-soft);
+  }
+  .notice-bad  { background: var(--debit-wash);  border-color: var(--debit);  color: #7C2439; }
+  .notice-ok   { background: var(--credit-wash); border-color: var(--credit); color: #0B5540; }
+  .notice-gate { background: var(--gate-wash);   border-color: var(--gate);   color: #6E4800; }
+
+  .empty { color: var(--ink-soft); font-size: 14px; max-width: 62ch; }
+  .empty code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: #EDF0F7;
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  select {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 5px 7px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: #FFF;
+    color: var(--ink);
+  }
+
+  /* The event lookup sits with the filters because it answers the same kind of
+     question — "show me this slice" — even though it reaches the models rather
+     than the log. It is styled as an input, not a call to action: pricing an
+     event is a read, and a prominent button would suggest otherwise. */
+  input.lookup {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 5px 7px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: #FFF;
+    color: var(--ink);
+    min-width: 19ch;
+  }
+  input.lookup::placeholder { color: var(--ink-faint); }
+  button.ghost {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 5px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  button.ghost:hover { border-color: var(--ink); color: var(--ink); }
+
+  /* Inside a definition list the bordered box reads as a form control sitting
+     in a sentence, so this variant is underlined text instead. It still has to
+     be a <button>: it does something, and a link with no href is not a control
+     the keyboard or a screen reader can find. */
+  button.ghost.inline {
+    border: 0;
+    padding: 0;
+    font-family: inherit;
+    font-size: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  button.ghost.inline:hover { color: var(--ink); }
+
+  .lede { font-size: 14px; color: var(--ink-soft); max-width: 74ch; margin: 0 0 16px; }
+
+  /* ---------- uplift chart ---------- */
+
+  .chart-band {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 18px 0 6px;
+  }
+  svg.ci text { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-soft); }
+  svg.ci text.name { font-family: var(--sans); font-size: 12px; fill: var(--ink); }
+  svg.ci .zero { stroke: var(--ink); stroke-width: 1; }
+  svg.ci .whisk { stroke-width: 1.5; }
+  svg.ci .sig .whisk { stroke: var(--credit); }
+  svg.ci .sig circle { fill: var(--credit); }
+  svg.ci .ns .whisk { stroke: var(--ink-faint); }
+  svg.ci .ns circle { fill: var(--ink-faint); }
+  svg.ci .neg .whisk { stroke: var(--debit); }
+  svg.ci .neg circle { fill: var(--debit); }
+
+  .foot {
+    margin-top: 26px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 980px) {
+    .reckoning { grid-template-columns: 1fr; }
+    .layout-split { grid-template-columns: 1fr; }
+    .drawer { position: static; max-height: none; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    tbody tr.row { animation: rise 220ms ease-out both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+
+<header class="statement">
+  <div class="statement-top">
+    <h1 class="wordmark">Recovery Command Centre</h1>
+    <div class="statement-meta" id="chips"></div>
+  </div>
+  <div class="statement-line" id="statement-line">loading…</div>
+</header>
+
+<main class="wrap">
+  <section class="reckoning" id="reckoning"></section>
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <section class="panel" id="panel" role="tabpanel"></section>
+  <p class="foot" id="foot"></p>
+</main>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------
+   DOM helpers.
+
+   `el` is the only way nodes are made in this file, and it assigns text
+   through textContent. There is no code path that puts an API string into
+   innerHTML — see the comment at the top of the file for why that matters
+   on this particular screen.
+   ------------------------------------------------------------------ */
+
+function el(tag, props, kids) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === "class") node.className = v;
+      else if (k === "text") node.textContent = String(v);
+      else if (k === "on") for (const [ev, fn] of Object.entries(v)) node.addEventListener(ev, fn);
+      else node.setAttribute(k, String(v));
+    }
+  }
+  for (const kid of [].concat(kids || [])) {
+    if (kid === null || kid === undefined || kid === false) continue;
+    node.appendChild(typeof kid === "object" ? kid : document.createTextNode(String(kid)));
+  }
+  return node;
+}
+
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+function mount(node, kids) { clear(node); for (const k of [].concat(kids || [])) if (k) node.appendChild(k); }
+
+/* ---------- formatting ---------- */
+
+const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+
+// Money the system moved or could move.
+function money(n) { return inr.format(Math.round(Number(n) || 0)); }
+
+// The accounting convention this page leans on: anything not done is shown as
+// a parenthesised figure, never as a minus sign.
+function owed(n) { return "(" + money(Math.abs(Number(n) || 0)) + ")"; }
+
+// pct and num both return an em-dash for a value that is absent rather than
+// coercing it to zero. A metric that was never measured and a metric that
+// measured zero are different claims, and 0.0% is the more dangerous of the two
+// to display by accident: it reads as a finding.
+function pct(x, digits) {
+  if (x === null || x === undefined || Number.isNaN(Number(x))) return "—";
+  return (Number(x) * 100).toFixed(digits === undefined ? 0 : digits) + "%";
+}
+function num(x, digits) {
+  if (x === null || x === undefined || Number.isNaN(Number(x))) return "—";
+  return Number(x).toFixed(digits === undefined ? 2 : digits);
+}
+function count(n) { return inr.format(Number(n) || 0); }
+
+// Action and cause names arrive as snake_case identifiers. Rendered as words,
+// because the person reading this is an analyst, not a maintainer.
+function words(s) { return String(s || "").replace(/_/g, " "); }
+
+function shortHash(h) { return h ? String(h).slice(0, 12) + "…" : "—"; }
+
+function when(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso);
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/* ---------- api ---------- */
+
+async function api(path, options) {
+  const res = await fetch(path, options || {});
+  let payload = null;
+  try { payload = await res.json(); } catch (e) { /* fall through to status text */ }
+  if (!res.ok) {
+    const err = new Error((payload && payload.error) || res.statusText || ("HTTP " + res.status));
+    err.status = res.status;
+    err.detail = payload && payload.detail;
+    throw err;
+  }
+  return payload;
+}
+
+function post(path, body, operator) {
+  const headers = { "Content-Type": "application/json" };
+  if (operator) headers["X-Operator"] = operator;
+  return api(path, { method: "POST", headers, body: JSON.stringify(body || {}) });
+}
+
+/* ---------- state ---------- */
+
+const state = {
+  health: null,
+  overview: null,
+  benchmark: null,
+  policy: null,
+  tab: "decisions",
+  selected: null,
+  pendingCount: 0,
+  filters: { surface: "", action: "", run: "" },
+};
+
+/* ==================================================================
+   Statement strip
+   ================================================================== */
+
+function renderChips() {
+  const h = state.health || {};
+  const chips = [];
+
+  chips.push(el("span", {
+    class: "chip " + (h.dry_run ? "chip-strong" : "chip-bad"),
+    text: h.dry_run ? "dry run" : "LIVE FLAG SET",
+    title: h.dry_run
+      ? "Decisions are recorded and simulated. Nothing reaches a customer."
+      : "The dry-run flag is off. Note that this build still has no live transport implemented.",
+  }));
+
+  chips.push(el("span", {
+    class: "chip",
+    text: "no live transport",
+    title: "The dispatcher's live path raises unconditionally. There is no code here that can contact a real customer.",
+  }));
+
+  if (h.kill_switch_engaged) {
+    chips.push(el("span", { class: "chip chip-bad", text: "halted",
+      title: "The kill-switch file is present. No sweep will start." }));
+  }
+
+  chips.push(el("span", { class: "chip", text: "policy " + (h.policy_version || "?") }));
+
+  // The chain head doubles as the verify control: clicking it recomputes every
+  // hash in the log. Putting the check on the hash itself keeps the claim and
+  // its test in the same place.
+  chips.push(el("button", {
+    class: "chip", id: "verify",
+    text: "chain " + shortHash((state.overview || {}).chain_head),
+    title: "Recompute the hash chain over all " + count(h.audit_records) + " audit records",
+    on: { click: verifyChain },
+  }));
+
+  mount(document.getElementById("chips"), chips);
+}
+
+async function verifyChain() {
+  const btn = document.getElementById("verify");
+  btn.textContent = "verifying…";
+  try {
+    const r = await api("/api/audit/verify");
+    btn.className = "chip " + (r.ok ? "chip-ok" : "chip-bad");
+    btn.textContent = r.ok ? "chain intact · " + count(r.records) : "CHAIN BROKEN";
+    btn.title = r.reason || "";
+  } catch (e) {
+    btn.className = "chip chip-bad";
+    btn.textContent = "verify failed";
+    btn.title = e.message;
+  }
+}
+
+function renderStatementLine() {
+  const o = state.overview || {};
+  const h = state.health || {};
+  const bits = [];
+  if (o.has_run) {
+    bits.push(o.run_id);
+    bits.push(count(o.events) + " events");
+    bits.push((o.surfaces || []).map(words).join(" · "));
+    bits.push("finished " + when(o.finished_at));
+  } else {
+    bits.push("no run recorded yet");
+  }
+  bits.push("code " + (h.code_version || "?"));
+  document.getElementById("statement-line").textContent = bits.filter(Boolean).join("   ·   ");
+}
+
+/* ==================================================================
+   The reckoning — the signature block.
+
+   Left: what the agent expects to recover, then what it declined to attempt,
+   set with equal weight. Right: the queue waiting on a person.
+   ================================================================== */
+
+function renderReckoning() {
+  const o = state.overview || {};
+  const bench = state.benchmark;
+
+  if (!o.has_run) {
+    mount(document.getElementById("reckoning"), [
+      el("div", { class: "block", style: "grid-column: 1 / -1" }, [
+        el("p", { class: "eyebrow", text: "nothing to show yet" }),
+        el("p", { class: "empty" }, [
+          "No run has been recorded. Score the held-out split to populate this screen: ",
+          el("code", { text: "python -m src.agent run" }),
+          ". Every decision is written to an append-only log first, and nothing is sent to anyone.",
+        ]),
+      ]),
+    ]);
+    return;
+  }
+
+  const transactional = Number(o.projected_transactional_inr) || 0;
+  const retention = Number(o.projected_retention_inr) || 0;
+  const price = bench && bench.price_of_compliance;
+
+  const rows = [];
+
+  rows.push(el("tr", {}, [
+    el("th", {}, [el("span", { text: "Value at risk" }),
+                  el("span", { class: "sub", text: "amount × margin, across " + count(o.events) + " events" })]),
+    el("td", { class: "num", text: money(o.value_at_risk_inr) }),
+  ]));
+
+  rows.push(el("tr", {}, [
+    el("th", {}, [el("span", { text: "Expected recovery, this transaction" }),
+                  el("span", { class: "sub", text: "incremental over doing nothing" })]),
+    el("td", { class: "num credit", text: "+" + money(transactional) }),
+  ]));
+
+  rows.push(el("tr", {}, [
+    el("th", {}, [el("span", { text: "Expected retention value" }),
+                  el("span", { class: "sub", text: "quoted apart — a claim about future revenue, not money in play" })]),
+    el("td", { class: "num credit", text: "+" + money(retention) }),
+  ]));
+
+  rows.push(el("tr", { class: "section-gap" }, [
+    el("th", {}, [el("span", { text: "Options refused by policy" }),
+                  el("span", { class: "sub", text: "priced, then declined — consent, DND, quiet hours, retry and chase limits" })]),
+    el("td", { class: "num debit", text: owed(o.guardrail_blocks).replace(/[()]/g, m => m) }),
+  ]));
+
+  if (price) {
+    rows.push(el("tr", {}, [
+      el("th", {}, [el("span", { text: "The price of compliance" }),
+                    el("span", { class: "sub", text: "what the same agent earns with the policy engine removed" })]),
+      el("td", { class: "num debit", text: owed(price.inr) }),
+    ]));
+  }
+
+  rows.push(el("tr", { class: "total" }, [
+    el("th", { text: "Held for a person to decide" }),
+    el("td", { class: "num gated", text: count(o.gated_for_approval) + " decisions" }),
+  ]));
+
+  const left = el("div", { class: "block" }, [
+    el("p", { class: "eyebrow", text: "The reckoning" }),
+    el("table", { class: "ledger" }, [el("tbody", {}, rows)]),
+    el("p", { class: "verdict" }, [
+      price
+        ? "Removing the policy engine earns " + money(price.inr) + " more — "
+          + price.pct_of_value_at_risk + "% of value at risk — by making "
+          + count(price.choices_the_policy_engine_would_refuse)
+          + " choices the engine refuses and contacting "
+          + count(price.extra_contacts_required)
+          + " more people. That is the cost of not messaging people who did not agree to be messaged, and it is worth paying."
+        : "Run the benchmark to price what the policy engine costs in recovered revenue.",
+    ]),
+  ]);
+
+  const actions = Object.entries(o.actions || {}).sort((a, b) => b[1] - a[1]);
+  const topAction = actions.length ? actions[0] : null;
+
+  const right = el("div", { class: "block" }, [
+    el("p", { class: "eyebrow", text: "Waiting on you" }),
+    el("p", { class: "headline-num gated", text: count(state.pendingCount) }),
+    el("p", { class: "headline-note", text: state.pendingCount === 1 ? "decision needs sign-off" : "decisions need sign-off" }),
+    el("div", { class: "row-actions", style: "margin-top:14px" }, [
+      el("button", { class: "btn", text: "Open the review queue",
+                     on: { click: () => selectTab("approvals") } }),
+    ]),
+    el("div", { class: "verdict" }, [
+      el("div", {}, [
+        el("span", { text: "Retries issued " }),
+        el("span", { class: "num", text: count(o.retries_issued) }),
+        el("span", { text: "   ·   discount committed " }),
+        el("span", { class: "num", text: money(o.discount_committed_inr) }),
+      ]),
+      topAction
+        ? el("div", { style: "margin-top:6px",
+                      text: "Most common choice: " + words(topAction[0]) + " (" + count(topAction[1]) + ")" })
+        : null,
+    ]),
+  ]);
+
+  mount(document.getElementById("reckoning"), [left, right]);
+}
+
+/* ==================================================================
+   Tabs
+   ================================================================== */
+
+const TABS = [
+  ["decisions", "Decisions", renderDecisions],
+  ["approvals", "Review queue", renderApprovals],
+  ["uplift", "Uplift", renderUplift],
+  ["policy", "The leash", renderPolicy],
+  ["models", "Models", renderModels],
+];
+
+function renderTabs() {
+  const nodes = TABS.map(([id, label]) => {
+    const kids = [document.createTextNode(label)];
+    if (id === "approvals" && state.pendingCount) {
+      kids.push(el("span", { class: "count", text: count(state.pendingCount) }));
+    }
+    return el("button", {
+      class: "tab", role: "tab", "aria-selected": String(state.tab === id),
+      on: { click: () => selectTab(id) },
+    }, kids);
+  });
+  mount(document.getElementById("tabs"), nodes);
+}
+
+function selectTab(id) {
+  state.tab = id;
+  state.selected = null;
+  renderTabs();
+  const entry = TABS.find(t => t[0] === id);
+  const panel = document.getElementById("panel");
+  mount(panel, [el("p", { class: "empty", text: "loading…" })]);
+  Promise.resolve(entry[2](panel)).catch(err => showError(panel, err));
+}
+
+function showError(panel, err) {
+  const kids = [el("div", { class: "notice notice-bad", text: err.message })];
+  if (err.detail) {
+    for (const [k, v] of Object.entries(err.detail)) {
+      kids.push(el("p", { class: "empty", style: "margin:6px 0" },
+                    [el("strong", { text: words(k) + ": " }), String(v)]));
+    }
+  }
+  mount(panel, kids);
+}
+
+/* ==================================================================
+   Decisions
+   ================================================================== */
+
+const SURFACES = ["payment_failure", "checkout_abandonment", "overdue_receivable"];
+
+async function renderDecisions(panel) {
+  const q = new URLSearchParams({ limit: "200" });
+  if (state.filters.surface) q.set("surface", state.filters.surface);
+  if (state.filters.action) q.set("action", state.filters.action);
+  if (state.filters.run) q.set("run_id", state.filters.run);
+  const [data, history] = await Promise.all([
+    api("/api/decisions?" + q.toString()),
+    api("/api/runs?limit=20"),
+  ]);
+
+  if (!data.run_id) {
+    mount(panel, [el("p", { class: "empty" }, [
+      "No decisions recorded. Run ", el("code", { text: "python -m src.agent run" }),
+      " to score the held-out split.",
+    ])]);
+    return;
+  }
+
+  const allActions = [...new Set(data.decisions.map(d => d.action))].sort();
+
+  const surfaceSelect = el("select", { "aria-label": "Filter by surface", on: { change: e => {
+    state.filters.surface = e.target.value; selectTab("decisions");
+  } } }, [el("option", { value: "", text: "all surfaces" })].concat(
+    SURFACES.map(s => el("option", { value: s, text: words(s), selected: state.filters.surface === s }))));
+
+  const actionSelect = el("select", { "aria-label": "Filter by action", on: { change: e => {
+    state.filters.action = e.target.value; selectTab("decisions");
+  } } }, [el("option", { value: "", text: "all actions" })].concat(
+    allActions.map(a => el("option", { value: a, text: words(a), selected: state.filters.action === a }))));
+
+  /* Runs are listed newest first and labelled by when they finished rather than
+     by id, because an operator asking "what did last night's sweep do" is
+     asking about a time, not a hash. Older runs stay readable: the log is
+     append-only, so a past sweep's evidence never changes. */
+  const finished = (history.runs || []).filter(r => r.finished_at);
+  const runSelect = el("select", { "aria-label": "Filter by run", on: { change: e => {
+    state.filters.run = e.target.value; selectTab("decisions");
+  } } }, [el("option", { value: "", text: "latest run" })].concat(
+    finished.map(r => el("option", { value: r.run_id,
+      text: when(r.finished_at) + " · " + count(r.events) + " events",
+      selected: state.filters.run === r.run_id }))));
+
+  const lookup = el("input", { type: "search", class: "lookup",
+    placeholder: "price an event by id", "aria-label": "Look up an event by id",
+    on: { keydown: e => { if (e.key === "Enter") lookupEvent(e.target.value); } } });
+  const lookupGo = el("button", { class: "ghost", text: "Price it",
+    on: { click: () => lookupEvent(lookup.value) } });
+
+  const filters = el("div", { class: "filters" }, [
+    surfaceSelect, actionSelect,
+    finished.length > 1 ? runSelect : null,
+    lookup, lookupGo,
+    el("span", { class: "id", text: count(data.decisions.length) + " of " + count(data.total) + " shown, highest value at risk first" }),
+  ]);
+
+  const table = decisionTable(data.decisions, panel);
+  const split = el("div", { class: "layout-split" }, [
+    el("div", {}, [filters, table]),
+    el("div", { id: "drawer-host" }, [drawerPlaceholder()]),
+  ]);
+  mount(panel, [split]);
+}
+
+function drawerPlaceholder() {
+  return el("div", { class: "drawer" }, [
+    el("p", { class: "eyebrow", text: "Evidence" }),
+    el("p", { class: "empty" }, [
+      "Pick a decision to see every option the agent priced, what each was worth, ",
+      "which guardrail refused it, and the arithmetic behind the one it chose.",
+    ]),
+  ]);
+}
+
+/* Every priced option, refused ones included, in the order the agent ranked
+   them. Shared by the decision drawer and the event lookup so that both show
+   the same thing the same way — a reviewer comparing "what it did" against
+   "what it would do now" should not have to account for two renderings. */
+function optionList(considered, chosenAction, chosenEnr) {
+  const nodes = [];
+  for (const opt of considered || []) {
+    const isChosen = opt.action === chosenAction
+      && Number(opt.expected_net_recovery_inr) === Number(chosenEnr);
+    const blocked = (opt.blocked_by || []).length > 0;
+    const enr = Number(opt.expected_net_recovery_inr) || 0;
+    nodes.push(el("div", { class: "option" + (isChosen ? " chosen" : "") + (blocked ? " blocked" : "") }, [
+      el("div", { class: "option-head" }, [
+        el("span", { class: "option-name", text: words(opt.action)
+          + (opt.discount_pct ? " · " + opt.discount_pct + "%" : "")
+          + (opt.delay_hours ? " · in " + opt.delay_hours + "h" : "")
+          + (opt.channel ? " · " + opt.channel : "") }),
+        el("span", { class: "num " + (blocked ? "debit" : enr > 0 ? "credit" : ""),
+                     text: blocked ? owed(enr) : (enr > 0 ? "+" + money(enr) : money(enr)) }),
+      ]),
+      blocked ? el("div", { class: "option-why", text: "Refused: " + (opt.blocked_by || []).join("; ") }) : null,
+      (opt.notes || []).length ? el("div", { class: "option-note", text: (opt.notes || []).join(" · ") }) : null,
+    ]));
+  }
+  nodes.push(el("p", { class: "option-note",
+    text: "Refused options keep their price in parentheses. The agent knew what they were worth and declined anyway." }));
+  return nodes;
+}
+
+/* Price one event on demand.
+
+   This is the only place the dashboard reaches the models rather than the log,
+   and it is a question, not an instruction: it writes nothing, records nothing,
+   and contacts nobody. The response asserts that itself in `call_wrote_nothing`,
+   and the panel repeats it on screen rather than leaving it implicit, because a
+   screen showing a priced action is otherwise indistinguishable from one that
+   just took it.
+
+   Separately from that assertion about the *call*, the response carries any
+   decision the log already holds about the *event*, so the panel can put what
+   the agent would do now next to what it actually did, with a click through to
+   the evidence. Those two facts used to share one field named `recorded`, which
+   read as a property of the event while asserting something about the call. */
+async function lookupEvent(eventId) {
+  const host = document.getElementById("drawer-host");
+  if (!host) return;
+  const id = String(eventId || "").trim();
+  if (!id) return;
+  mount(host, [el("div", { class: "drawer" }, [el("p", { class: "empty", text: "pricing " + id + "…" })])]);
+  try {
+    const ev = await api("/api/event/" + encodeURIComponent(id));
+    mount(host, [renderEventLookup(ev)]);
+  } catch (e) {
+    mount(host, [el("div", { class: "drawer" }, [
+      el("p", { class: "eyebrow", text: "Event lookup" }),
+      el("div", { class: "notice notice-bad", text: e.message }),
+    ])]);
+  }
+}
+
+function renderEventLookup(ev) {
+  const choice = ev.would_choose || {};
+  const kids = [
+    el("p", { class: "eyebrow", text: "Priced on demand · " + ev.event_id }),
+    el("h3", { text: words(choice.action) + (choice.discount_pct ? " · " + choice.discount_pct + "% off" : "") }),
+    el("p", { class: "headline-note",
+      text: words(ev.surface) + " · " + money(ev.amount_inr) + " INR at risk" }),
+  ];
+
+  /* Read from the payload rather than stated unconditionally: the server
+     asserts this, and if it ever stopped the screen should stop claiming it. */
+  if (ev.call_wrote_nothing) {
+    kids.push(el("div", { class: "notice" }, [
+      el("strong", { text: "Nothing written. " }),
+      "This is what the agent would choose if it saw this event now. No decision was "
+      + "recorded, no message was queued, and no budget was consumed by asking.",
+    ]));
+  }
+
+  if (ev.requires_human_approval) {
+    kids.push(el("div", { class: "notice notice-gate" }, [
+      el("strong", { text: "Would be held for sign-off. " }), ev.approval_reason,
+    ]));
+  }
+
+  const kv = el("dl", { class: "kv" });
+  const pairs = [
+    ["Most likely cause", words(ev.root_cause) + " (" + pct(ev.root_cause_confidence, 1) + ")"],
+    ["Expected net", money(choice.expected_net_recovery_inr) + " INR"],
+  ];
+  for (const [k, v] of pairs) { kv.appendChild(el("dt", { text: k })); kv.appendChild(el("dd", { text: v })); }
+
+  kv.appendChild(el("dt", { text: "Already in the log" }));
+  if (ev.recorded_decision_id) {
+    /* The recorded action is the interesting comparison, so it is named here
+       and not just linked to. A run scored on a different day, or before a
+       policy change, can legitimately land somewhere else. */
+    kv.appendChild(el("dd", {}, [
+      el("span", { text: words(ev.recorded_action) + " · " + when(ev.recorded_at) + " · " }),
+      el("button", { class: "ghost inline", text: "see that evidence",
+        on: { click: () => openDecision(ev.recorded_decision_id, null) } }),
+    ]));
+    if (ev.recorded_action && choice.action && ev.recorded_action !== choice.action) {
+      kids.push(el("p", { class: "option-note",
+        text: "The recorded decision chose " + words(ev.recorded_action) + " and this pricing "
+            + "chooses " + words(choice.action) + ". Budgets, frequency caps and prior attempts "
+            + "are all state, so a sweep and a fresh question can differ without either being wrong." }));
+    }
+  } else {
+    kv.appendChild(el("dd", { text: "no — no recorded sweep has worked this event" }));
+  }
+  kids.push(kv);
+
+  kids.push(el("h4", { text: "Every option it priced" }));
+  for (const node of optionList(ev.considered, choice.action, choice.expected_net_recovery_inr)) {
+    kids.push(node);
+  }
+  return el("div", { class: "drawer" }, kids);
+}
+
+function decisionTable(rows, panel) {
+  const head = el("thead", {}, [el("tr", {}, [
+    el("th", { text: "event" }),
+    el("th", { text: "cause" }),
+    el("th", { class: "num", text: "at risk" }),
+    el("th", { text: "chose" }),
+    el("th", { class: "num", text: "expected net" }),
+    el("th", { class: "num", text: "refused" }),
+    el("th", { text: "status" }),
+  ])]);
+
+  const body = el("tbody", {}, rows.map((d, i) => {
+    const tr = el("tr", {
+      class: "row", tabindex: "0", style: "animation-delay:" + Math.min(i * 8, 240) + "ms",
+      on: {
+        click: () => openDecision(d.decision_id, tr),
+        keydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDecision(d.decision_id, tr); } },
+      },
+    }, [
+      el("td", {}, [
+        el("div", { text: words(d.event_type) }),
+        el("div", { class: "id", text: d.event_id + " · " + d.customer_id }),
+      ]),
+      el("td", {}, [
+        el("div", { class: "cause", text: words(d.root_cause) }),
+        el("div", { class: "id", text: pct(d.root_cause_confidence) + " confident" }),
+      ]),
+      el("td", { class: "num", text: money(d.value_at_risk_inr) }),
+      el("td", {}, [
+        el("div", { text: words(d.action) }),
+        d.discount_pct ? el("div", { class: "id", text: d.discount_pct + "% off" })
+          : d.delay_hours ? el("div", { class: "id", text: "in " + d.delay_hours + "h" })
+          : d.channel ? el("div", { class: "id", text: d.channel }) : null,
+      ]),
+      el("td", { class: "num " + (Number(d.expected_net_recovery_inr) > 0 ? "credit" : "") },
+         [el("span", { text: Number(d.expected_net_recovery_inr) > 0
+            ? "+" + money(d.expected_net_recovery_inr) : money(d.expected_net_recovery_inr) })]),
+      el("td", { class: "num" },
+         [d.blocked_count
+            ? el("span", { class: "debit", text: String(d.blocked_count) + " of " + d.options_considered })
+            : el("span", { class: "id", text: "—" })]),
+      el("td", {}, [statusPill(d)]),
+    ]);
+    return tr;
+  }));
+
+  return el("table", { class: "grid" }, [head, body]);
+}
+
+function statusPill(d) {
+  if (d.requires_human_approval) return el("span", { class: "pill pill-gate", text: "needs sign-off" });
+  if (d.action === "do_nothing") return el("span", { class: "pill pill-none", text: "left alone" });
+  return el("span", { class: "pill pill-auto", text: "acted" });
+}
+
+async function openDecision(id, tr) {
+  document.querySelectorAll("tbody tr.row.on").forEach(n => n.classList.remove("on"));
+  if (tr) tr.classList.add("on");
+  const host = document.getElementById("drawer-host");
+  if (!host) return;
+  state.selected = id;
+  mount(host, [el("div", { class: "drawer" }, [el("p", { class: "empty", text: "loading evidence…" })])]);
+  try {
+    const detail = await api("/api/decision/" + encodeURIComponent(id));
+    mount(host, [renderDrawer(detail)]);
+  } catch (e) {
+    mount(host, [el("div", { class: "drawer" }, [el("div", { class: "notice notice-bad", text: e.message })])]);
+  }
+}
+
+function renderDrawer(detail) {
+  const s = detail.summary;
+  const kids = [];
+
+  kids.push(el("p", { class: "eyebrow", text: "Evidence · " + s.decision_id }));
+  kids.push(el("h3", { text: words(s.action) + (s.discount_pct ? " · " + s.discount_pct + "% off" : "") }));
+  kids.push(el("p", { class: "headline-note",
+    text: words(s.event_type) + " · " + s.event_id + " · " + money(s.amount_inr) + " INR" }));
+
+  if (s.requires_human_approval) {
+    kids.push(el("div", { class: "notice notice-gate" }, [
+      el("strong", { text: "Held for sign-off. " }), s.approval_reason,
+    ]));
+  }
+
+  // --- what it decided ---
+  kids.push(el("h4", { text: "What it decided" }));
+  const kv = el("dl", { class: "kv" });
+  const pairs = [
+    ["Most likely cause", words(s.root_cause) + " (" + pct(s.root_cause_confidence, 1) + ")"],
+    ["Recovery chance", pct(s.p_recover, 1) + " vs " + pct(s.p_recover_baseline, 1) + " if left alone"],
+    ["Expected net", money(s.expected_net_recovery_inr) + " INR"],
+    ["Of which retention", money(s.ltv_component_inr) + " INR"],
+    ["Value at risk", money(s.value_at_risk_inr) + " INR"],
+    ["Recorded", when(s.recorded_at)],
+  ];
+  for (const [k, v] of pairs) { kv.appendChild(el("dt", { text: k })); kv.appendChild(el("dd", { text: v })); }
+  kids.push(kv);
+
+  if (s.probability_is_assumed) {
+    kids.push(el("p", { class: "option-note",
+      text: "The recovery chance for this action is an explicit assumption, not a fitted estimate — it cannot be learned from an exploration log." }));
+  }
+
+  // --- every option ---
+  kids.push(el("h4", { text: "Every option it priced" }));
+  for (const node of optionList(detail.considered, s.action, s.expected_net_recovery_inr)) {
+    kids.push(node);
+  }
+
+  // --- arithmetic and trace ---
+  if (detail.arithmetic) {
+    kids.push(el("h4", { text: "The arithmetic" }));
+    kids.push(el("pre", { class: "trace", text: detail.arithmetic }));
+  }
+
+  if ((detail.tool_trace || []).length) {
+    kids.push(el("h4", { text: "How it got there" }));
+    kids.push(el("pre", { class: "trace",
+      text: detail.tool_trace.map((t, i) => (i + 1) + ". " + (t.tool || "?")
+        + (t.summary ? " — " + t.summary : "")).join("\n") }));
+  }
+
+  // --- approval ---
+  if (detail.approval) {
+    kids.push(el("h4", { text: "Sign-off" }));
+    kids.push(el("div", { class: "notice " + (detail.approval.granted ? "notice-ok" : "notice-bad") }, [
+      el("strong", { text: detail.approval.granted ? "Approved by " : "Declined by " }),
+      detail.approval.approver,
+      el("span", { text: " · " + when(detail.approval.recorded_at) }),
+      detail.approval.reason ? el("div", { text: detail.approval.reason }) : null,
+    ]));
+  } else if (s.requires_human_approval) {
+    kids.push(approvalForm(s.decision_id));
+  }
+
+  // --- executions ---
+  if ((detail.executions || []).length) {
+    kids.push(el("h4", { text: "What the dispatcher did" }));
+    for (const ex of detail.executions) {
+      kids.push(el("div", { class: "option" }, [
+        el("div", { class: "option-head" }, [
+          el("span", { class: "option-name", text: words(ex.status) }),
+          el("span", { class: "id", text: ex.adapter || "" }),
+        ]),
+        el("div", { class: "option-note", text: (ex.detail || "") + (ex.dry_run ? " · dry run" : "") }),
+      ]));
+    }
+  }
+
+  // --- narration ---
+  kids.push(el("h4", { text: "Put it in words" }));
+  kids.push(el("div", { class: "row-actions" }, [
+    el("button", { class: "btn btn-quiet", text: "Explain this decision",
+      on: { click: e => narrate(e.target, s.decision_id, "explain_decision_plainly") } }),
+    el("button", { class: "btn btn-quiet", text: "Summarise for a reviewer",
+      on: { click: e => narrate(e.target, s.decision_id, "summarise_case_for_reviewer") } }),
+  ]));
+  kids.push(el("div", { id: "narration" }));
+
+  // --- provenance ---
+  kids.push(el("h4", { text: "Provenance" }));
+  const prov = el("dl", { class: "kv" });
+  for (const [k, v] of [
+    ["Record hash", shortHash(detail.record_hash)],
+    ["Links to", shortHash(detail.prev_hash)],
+    ["Policy", detail.policy_version],
+    ["Code", detail.code_version],
+  ]) { prov.appendChild(el("dt", { text: k })); prov.appendChild(el("dd", { text: v })); }
+  kids.push(prov);
+
+  return el("div", { class: "drawer" }, kids);
+}
+
+async function narrate(button, id, role) {
+  const host = document.getElementById("narration");
+  button.disabled = true;
+  mount(host, [el("p", { class: "empty", text: "writing…" })]);
+  try {
+    const draft = await post("/api/narrate", { decision_id: id, role });
+    mount(host, [
+      el("pre", { class: "trace", text: draft.text }),
+      el("p", { class: "option-note",
+        text: draft.model + " · " + draft.attempts + (draft.attempts === 1 ? " attempt" : " attempts")
+              + " · validated against the facts above" }),
+    ]);
+  } catch (e) {
+    const cls = e.status === 503 ? "notice notice-gate" : "notice notice-bad";
+    const kids = [el("div", { class: cls, text: e.message })];
+    if (e.detail && e.detail.why) kids.push(el("p", { class: "option-note", text: e.detail.why }));
+    if (e.detail && e.detail.note) kids.push(el("p", { class: "option-note", text: e.detail.note }));
+    if (e.detail && e.detail.problems) {
+      kids.push(el("p", { class: "option-note", text: "Refused because: " + e.detail.problems.join("; ") }));
+    }
+    mount(host, kids);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ==================================================================
+   Review queue
+   ================================================================== */
+
+function approvalForm(decisionId) {
+  const input = el("input", { type: "text", placeholder: "Your name",
+                              autocomplete: "off", spellcheck: "false" });
+  const feedback = el("div");
+
+  async function submit(granted) {
+    const who = input.value.trim();
+    if (!who) {
+      mount(feedback, [el("div", { class: "notice notice-bad",
+        text: "Enter your name first. Approvals are recorded against a person — an unsigned one is not oversight." })]);
+      input.focus();
+      return;
+    }
+    mount(feedback, [el("p", { class: "empty", text: granted ? "approving…" : "declining…" })]);
+    try {
+      const r = await post("/api/approve", { decision_id: decisionId, granted, reason: "" }, who);
+      mount(feedback, [el("div", { class: "notice " + (granted ? "notice-ok" : "notice-bad") }, [
+        el("strong", { text: granted ? "Approved. " : "Declined. " }),
+        granted ? (r.status ? "Dispatcher reported: " + words(r.status) : "Released for execution.")
+                : "Recorded as declined. Nothing will be sent.",
+      ])]);
+      await refreshCounts();
+      if (state.tab === "approvals") selectTab("approvals");
+    } catch (e) {
+      mount(feedback, [el("div", { class: "notice notice-bad", text: e.message })]);
+    }
+  }
+
+  return el("div", {}, [
+    el("div", { class: "field" }, [el("label", { text: "Signing as" }), input]),
+    el("div", { class: "row-actions" }, [
+      el("button", { class: "btn", text: "Approve and release", on: { click: () => submit(true) } }),
+      el("button", { class: "btn btn-decline", text: "Decline", on: { click: () => submit(false) } }),
+    ]),
+    feedback,
+  ]);
+}
+
+async function renderApprovals(panel) {
+  const data = await api("/api/pending?limit=200");
+  if (!data.total) {
+    mount(panel, [
+      el("p", { class: "eyebrow", text: "Review queue" }),
+      el("p", { class: "empty" }, [
+        "Nothing is waiting. Every decision in the last run was either inside the agent's authority or left alone. ",
+        "Actions land here when the amount is above the auto-approve ceiling, when confidence is too low to act, ",
+        "or when the action is one that damages a relationship if it is wrong.",
+      ]),
+    ]);
+    return;
+  }
+
+  const lede = el("p", { class: "lede" }, [
+    count(data.total) + " decisions are held for a person, covering ",
+    el("strong", { text: money(data.total_value_at_risk_inr) + " INR" }),
+    " of value at risk and " + money(data.total_expected_net_recovery_inr) + " INR of expected recovery. ",
+    "The queue is sorted by what is at stake. Nothing here has been sent.",
+  ]);
+
+  const table = decisionTable(data.pending, panel);
+  mount(panel, [
+    el("p", { class: "eyebrow", text: "Review queue" }), lede,
+    el("div", { class: "layout-split" }, [
+      el("div", {}, [table]),
+      el("div", { id: "drawer-host" }, [drawerPlaceholder()]),
+    ]),
+  ]);
+}
+
+/* ==================================================================
+   Uplift — bootstrap confidence intervals, drawn by hand.
+
+   A dot-and-whisker plot rather than bars: the interval is the finding, and a
+   bar chart would draw the eye to the point estimate and hide the width.
+   ================================================================== */
+
+async function renderUplift(panel) {
+  const bench = state.benchmark || (state.benchmark = await api("/api/benchmark"));
+  const comparisons = bench.comparisons || [];
+  const lawful = comparisons.filter(c => c.lawful);
+  const unlawful = comparisons.filter(c => !c.lawful);
+
+  const kids = [
+    el("p", { class: "eyebrow", text: "Incremental uplift · " + bench.split + " split" }),
+    el("p", { class: "lede" }, [
+      "Each line is the agent's total recovery minus one alternative policy, on the same ",
+      count(bench.events) + " held-out events, with a 95% interval from ",
+      count(bench.bootstrap_replicates) + " paired bootstrap replicates. ",
+      "Intervals that clear zero are findings; the rest are ties, and are labelled as ties.",
+    ]),
+  ];
+
+  kids.push(el("p", { class: "chart-band", text: "Against policies that follow the rules" }));
+  kids.push(ciChart(lawful));
+
+  if (unlawful.length) {
+    kids.push(el("p", { class: "chart-band", text: "Against policies that ignore the rules" }));
+    kids.push(el("p", { class: "empty", style: "margin:0 0 10px" },
+      [bench.conventions && bench.conventions.unlawful_baselines
+        ? bench.conventions.unlawful_baselines
+        : "These baselines out-earn the agent by contacting people it refuses to contact."]));
+    kids.push(ciChart(unlawful));
+  }
+
+  kids.push(el("p", { class: "chart-band", text: "Every policy, side by side" }));
+  kids.push(policyTable(bench));
+  mount(panel, kids);
+}
+
+function ciChart(comparisons) {
+  if (!comparisons.length) return el("p", { class: "empty", text: "Nothing to compare." });
+
+  const rows = comparisons.slice().sort(
+    (a, b) => b.uplift_total_inr.point - a.uplift_total_inr.point);
+
+  const labelW = 250, padR = 90, rowH = 30, top = 22;
+  const plotW = 560;
+  const width = labelW + plotW + padR;
+  const height = top + rows.length * rowH + 16;
+
+  let lo = 0, hi = 0;
+  for (const c of rows) {
+    lo = Math.min(lo, c.uplift_total_inr.ci95_low);
+    hi = Math.max(hi, c.uplift_total_inr.ci95_high);
+  }
+  const span = (hi - lo) || 1;
+  const x = v => labelW + ((v - lo) / span) * plotW;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "ci");
+  svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Bootstrap confidence intervals for uplift against each policy");
+
+  function svgEl(tag, attrs, text) {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    if (text !== undefined) n.textContent = String(text);
+    return n;
+  }
+
+  // Zero line — the only reference that matters here.
+  svg.appendChild(svgEl("line", { class: "zero", x1: x(0), x2: x(0), y1: top - 12, y2: height - 12 }));
+  svg.appendChild(svgEl("text", { x: x(0) + 4, y: top - 16, "font-size": 10 }, "no difference"));
+
+  rows.forEach((c, i) => {
+    const y = top + i * rowH + 8;
+    const ci = c.uplift_total_inr;
+    const cls = !ci.excludes_zero ? "ns" : ci.point > 0 ? "sig" : "neg";
+    const g = svgEl("g", { class: cls });
+
+    const name = words(c.versus) + (c.oracle_advantage ? " *" : "");
+    g.appendChild(svgEl("text", { class: "name", x: labelW - 10, y: y + 4, "text-anchor": "end" }, name));
+    g.appendChild(svgEl("line", { class: "whisk", x1: x(ci.ci95_low), x2: x(ci.ci95_high), y1: y, y2: y }));
+    for (const v of [ci.ci95_low, ci.ci95_high]) {
+      g.appendChild(svgEl("line", { class: "whisk", x1: x(v), x2: x(v), y1: y - 4, y2: y + 4 }));
+    }
+    g.appendChild(svgEl("circle", { cx: x(ci.point), cy: y, r: 3.5 }));
+
+    const label = (ci.point > 0 ? "+" : "") + money(ci.point) + (ci.excludes_zero ? "" : "  tie");
+    const anchor = x(ci.point) > labelW + plotW * 0.66 ? "end" : "start";
+    const dx = anchor === "end" ? -10 : 10;
+    g.appendChild(svgEl("text", {
+      x: Math.max(labelW + 4, x(ci.ci95_high)) + dx, y: y + 4,
+      "text-anchor": anchor === "end" ? "end" : "start",
+    }, label));
+
+    svg.appendChild(g);
+  });
+
+  const wrapper = el("div", {}, []);
+  wrapper.appendChild(svg);
+  wrapper.appendChild(el("p", { class: "option-note",
+    text: "* reads ground truth the agent has to infer — an upper bound, not a competitor." }));
+  return wrapper;
+}
+
+function policyTable(bench) {
+  const rows = (bench.policies || []).slice().sort((a, b) => b.total_net_inr - a.total_net_inr);
+  const head = el("thead", {}, [el("tr", {}, [
+    el("th", { text: "policy" }),
+    el("th", { class: "num", text: "recovered" }),
+    el("th", { class: "num", text: "per event" }),
+    el("th", { class: "num", text: "contacts" }),
+    el("th", { class: "num", text: "per contact" }),
+    el("th", { class: "num", text: "discount" }),
+    el("th", { class: "num", text: "would be refused" }),
+  ])]);
+
+  const body = el("tbody", {}, rows.map(p => {
+    const isAgent = p.name === bench.reference_policy;
+    return el("tr", { class: isAgent ? "row on" : "row" }, [
+      el("td", {}, [
+        el("div", {}, [
+          el("strong", { text: words(p.name) }),
+          p.oracle_advantage ? el("span", { class: "id", text: " *" }) : null,
+          !p.lawful ? el("span", { class: "pill pill-refuse", style: "margin-left:8px", text: "ignores the rules" }) : null,
+        ]),
+        el("div", { class: "id", text: p.description || "" }),
+      ]),
+      el("td", { class: "num " + (p.total_net_inr > 0 ? "credit" : ""), text: money(p.total_net_inr) }),
+      el("td", { class: "num", text: money(p.mean_net_inr) }),
+      el("td", { class: "num", text: count(p.contacts) }),
+      el("td", { class: "num", text: p.inr_per_contact === null ? "—" : money(p.inr_per_contact) }),
+      el("td", { class: "num", text: money(p.discount_spend_inr) }),
+      el("td", { class: "num " + (p.would_be_refused ? "debit" : "") },
+         [el("span", { text: p.would_be_refused ? count(p.would_be_refused) : "—" })]),
+    ]);
+  }));
+
+  return el("div", {}, [
+    el("table", { class: "grid" }, [head, body]),
+    el("p", { class: "option-note",
+      text: "\"Would be refused\" counts the choices the shipped policy engine would not allow. "
+          + "A policy can only appear above the agent by making them." }),
+  ]);
+}
+
+/* ==================================================================
+   The leash — what is actually binding
+   ================================================================== */
+
+async function renderPolicy(panel) {
+  const p = state.policy || (state.policy = await api("/api/policy"));
+  const kids = [
+    el("p", { class: "eyebrow", text: "The leash · policy " + p.policy_version }),
+    el("p", { class: "lede" }, [
+      "These limits are loaded frozen at startup and there is no endpoint that edits them. ",
+      "Changing policy means editing ", el("code", { text: "config/policy.yaml" }),
+      " and restarting, so every change leaves a diff in version control rather than an ",
+      "unattributable edit in a running process.",
+    ]),
+  ];
+
+  function group(title, obj, notes) {
+    const dl = el("dl", { class: "kv" });
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "note") continue;
+      dl.appendChild(el("dt", { text: words(k) }));
+      dl.appendChild(el("dd", { text: Array.isArray(v) ? v.map(words).join(", ") : String(v) }));
+    }
+    return el("div", { class: "block", style: "margin-bottom:14px" }, [
+      el("p", { class: "eyebrow", text: title }), dl,
+      notes ? el("p", { class: "option-note", text: notes }) : null,
+      obj.note ? el("p", { class: "option-note", text: obj.note }) : null,
+    ]);
+  }
+
+  kids.push(el("div", { style: "display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px" }, [
+    group("Money limits", p.limits,
+      "An action worth less than the floor is not taken; the auto-approve ceiling is what sends large amounts to a person."),
+    group("Contact", p.contact,
+      "Consent is required per channel, DND is honoured, and the frequency cap counts contacts from the durable ledger — so re-running cannot reset it."),
+    group("Quiet hours", p.quiet_hours),
+    group("Retries", p.retries,
+      "Causes on the never-retry list are the ones where a retry cannot succeed but can look like card testing."),
+    group("Receivables", p.receivables,
+      "Disputed and mis-issued invoices are never chased automatically, whatever the economics say."),
+    group("Execution", p.execution),
+  ]));
+
+  mount(panel, kids);
+}
+
+/* ==================================================================
+   Models
+   ================================================================== */
+
+async function renderModels(panel) {
+  const report = await api("/api/models");
+  const kids = [
+    el("p", { class: "eyebrow", text: "Held-out performance" }),
+    el("p", { class: "lede" }, [
+      "Both model families are scored on a hash-partitioned test split that no training pass sees. ",
+      "Accuracy on its own says very little, so it is quoted beside the majority-class baseline: ",
+      "the score a model gets for always guessing the commonest cause. The gap between them is the ",
+      "part the model earned.",
+    ]),
+  ];
+
+  /* Field names come from artifacts/training_report.json as src/train.py writes
+     it. They are read explicitly rather than guessed, because a dashboard that
+     renders an em-dash for a metric it failed to find looks identical to one
+     reporting a metric that was never measured. */
+  const cause = report.root_cause || {};
+  const causeRows = Object.entries(cause).map(([surface, m]) => el("tr", {}, [
+    el("td", {}, [el("strong", { text: words(surface) }),
+                  el("div", { class: "id", text: count(m.n) + " held-out events" })]),
+    el("td", { class: "num", text: pct(m.accuracy, 1) }),
+    el("td", { class: "num", text: pct(m.majority_baseline, 1) }),
+    el("td", { class: "num credit", text: (m.accuracy != null && m.majority_baseline != null)
+        ? "+" + ((m.accuracy - m.majority_baseline) * 100).toFixed(1) + "pp" : "—" }),
+    el("td", { class: "num", text: num(m.log_loss, 3) }),
+    el("td", { class: "num", text: num(m.confidence_calibration_error, 3) }),
+  ]));
+
+  if (causeRows.length) {
+    kids.push(el("p", { class: "chart-band", text: "Root cause" }));
+    kids.push(el("table", { class: "grid" }, [
+      el("thead", {}, [el("tr", {}, [
+        el("th", { text: "surface" }), el("th", { class: "num", text: "accuracy" }),
+        el("th", { class: "num", text: "majority" }), el("th", { class: "num", text: "earned" }),
+        el("th", { class: "num", text: "log loss" }), el("th", { class: "num", text: "confidence error" }),
+      ])]),
+      el("tbody", {}, causeRows),
+    ]));
+    kids.push(el("p", { class: "option-note",
+      text: "Confidence error is the mean gap between stated confidence and observed accuracy. It is the "
+          + "number that matters for routing: the low-confidence gate hands an event to a person when the "
+          + "classifier is unsure, and that is only a safeguard if the stated uncertainty is truthful." }));
+  }
+
+  const rec = report.recovery || {};
+  const recRows = Object.entries(rec).map(([surface, m]) => el("tr", {}, [
+    el("td", {}, [el("strong", { text: words(surface) }),
+                  el("div", { class: "id", text: count(m.n) + " held-out events" })]),
+    el("td", { class: "num", text: num(m.overall_auc, 4) }),
+    el("td", { class: "num", text: num(m.overall_brier, 4) }),
+    el("td", { class: "num", text: num(m.overall_calibration_error, 4) }),
+    el("td", { class: "num", text: count(m.per_action ? m.per_action.length : null) }),
+  ]));
+
+  if (recRows.length) {
+    kids.push(el("p", { class: "chart-band", text: "Recovery probability" }));
+    kids.push(el("table", { class: "grid" }, [
+      el("thead", {}, [el("tr", {}, [
+        el("th", { text: "surface" }), el("th", { class: "num", text: "AUC" }),
+        el("th", { class: "num", text: "Brier" }), el("th", { class: "num", text: "calibration error" }),
+        el("th", { class: "num", text: "action variants" }),
+      ])]),
+      el("tbody", {}, recRows),
+    ]));
+    kids.push(el("p", { class: "option-note",
+      text: "Calibration matters more than ranking here: expected net recovery multiplies a probability by an amount, "
+          + "so a model that ranks well but is over-confident would systematically over-spend. An AUC around 0.72 "
+          + "is modest and is not hidden — the money comes from pricing each option honestly, not from separating "
+          + "winners from losers sharply." }));
+  }
+
+  mount(panel, kids);
+}
+
+/* ==================================================================
+   Boot
+   ================================================================== */
+
+async function refreshCounts() {
+  try {
+    const [health, overview] = await Promise.all([api("/api/health"), api("/api/overview")]);
+    state.health = health;
+    state.overview = overview;
+    state.pendingCount = overview.pending_approvals || 0;
+    renderChips();
+    renderStatementLine();
+    renderTabs();
+  } catch (e) { /* the panel will surface its own error */ }
+}
+
+function renderFoot() {
+  const h = state.health || {};
+  const lines = [
+    "Loopback only, no authentication. Do not expose this port.",
+    "No live provider transport is implemented: nothing here can contact a real customer.",
+    h.narration_available
+      ? "Narration is available."
+      : "Narration is unavailable — ANTHROPIC_API_KEY is not set. There is no template fallback by design.",
+    count(h.audit_records) + " audit records · code " + (h.code_version || "?") + " · policy " + (h.policy_version || "?"),
+  ];
+  const foot = document.getElementById("foot");
+  clear(foot);
+  lines.forEach((line, i) => {
+    if (i) foot.appendChild(el("br"));
+    foot.appendChild(document.createTextNode(line));
+  });
+}
+
+async function boot() {
+  try {
+    const [health, overview, policy] = await Promise.all([
+      api("/api/health"), api("/api/overview"), api("/api/policy"),
+    ]);
+    state.health = health;
+    state.overview = overview;
+    state.policy = policy;
+    state.pendingCount = overview.pending_approvals || 0;
+  } catch (e) {
+    document.getElementById("statement-line").textContent = "cannot reach the service: " + e.message;
+    mount(document.getElementById("panel"), [
+      el("div", { class: "notice notice-bad", text: "The dashboard could not reach its own API: " + e.message }),
+    ]);
+    return;
+  }
+
+  // The benchmark is optional — the dashboard is useful without it, and the
+  // reckoning block says so rather than showing a blank.
+  try { state.benchmark = await api("/api/benchmark"); } catch (e) { state.benchmark = null; }
+
+  renderChips();
+  renderStatementLine();
+  renderReckoning();
+  renderTabs();
+  renderFoot();
+  selectTab(state.overview.has_run ? "decisions" : "uplift");
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,572 @@
+{
+ "code_version": "3.1.0",
+ "policy_version": "3.1.0",
+ "root_cause": {
+  "payment_failure": {
+   "n": 974,
+   "accuracy": 0.813141683778234,
+   "majority_baseline": 0.32238193018480493,
+   "log_loss": 0.6081718895365987,
+   "confidence_calibration_error": 0.0742198510176569,
+   "confidence_reliability": [
+    {
+     "bin": "0.2-0.4",
+     "n": 118,
+     "mean_predicted": 0.33374591660747893,
+     "observed_rate": 0.3050847457627119
+    },
+    {
+     "bin": "0.4-0.5",
+     "n": 35,
+     "mean_predicted": 0.39089262975923666,
+     "observed_rate": 0.37142857142857144
+    },
+    {
+     "bin": "0.5-0.6",
+     "n": 9,
+     "mean_predicted": 0.5748678041004349,
+     "observed_rate": 1.0
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 74,
+     "mean_predicted": 0.7172902102956865,
+     "observed_rate": 0.9324324324324325
+    },
+    {
+     "bin": "0.8-0.9",
+     "n": 501,
+     "mean_predicted": 0.8156059934980078,
+     "observed_rate": 0.8902195608782435
+    },
+    {
+     "bin": "0.9-1.0",
+     "n": 237,
+     "mean_predicted": 0.9006638182735884,
+     "observed_rate": 0.9240506329113924
+    }
+   ],
+   "per_class": [
+    {
+     "class": "expired_card",
+     "support": 159,
+     "precision": 0.947,
+     "recall": 0.792,
+     "f1": 0.863
+    },
+    {
+     "class": "fraud_suspected",
+     "support": 82,
+     "precision": 0.984,
+     "recall": 0.744,
+     "f1": 0.847
+    },
+    {
+     "class": "insufficient_funds",
+     "support": 314,
+     "precision": 0.74,
+     "recall": 0.904,
+     "f1": 0.814
+    },
+    {
+     "class": "invalid_details",
+     "support": 173,
+     "precision": 0.921,
+     "recall": 0.809,
+     "f1": 0.862
+    },
+    {
+     "class": "technical_bank_side",
+     "support": 246,
+     "precision": 0.745,
+     "recall": 0.736,
+     "f1": 0.74
+    }
+   ]
+  },
+  "checkout_abandonment": {
+   "n": 568,
+   "accuracy": 0.8345070422535211,
+   "majority_baseline": 0.30985915492957744,
+   "log_loss": 0.47122621173404156,
+   "confidence_calibration_error": 0.06196208211061498,
+   "confidence_reliability": [
+    {
+     "bin": "0.2-0.4",
+     "n": 1,
+     "mean_predicted": 0.37032476012240917,
+     "observed_rate": 0.0
+    },
+    {
+     "bin": "0.4-0.5",
+     "n": 34,
+     "mean_predicted": 0.46026693400227064,
+     "observed_rate": 0.4411764705882353
+    },
+    {
+     "bin": "0.5-0.6",
+     "n": 79,
+     "mean_predicted": 0.5605331807782667,
+     "observed_rate": 0.6582278481012658
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 76,
+     "mean_predicted": 0.6925897029178676,
+     "observed_rate": 0.7631578947368421
+    },
+    {
+     "bin": "0.8-0.9",
+     "n": 106,
+     "mean_predicted": 0.8133664078725465,
+     "observed_rate": 0.8867924528301887
+    },
+    {
+     "bin": "0.9-1.0",
+     "n": 272,
+     "mean_predicted": 0.9631608580514524,
+     "observed_rate": 0.9375
+    }
+   ],
+   "per_class": [
+    {
+     "class": "comparison_shopping",
+     "support": 151,
+     "precision": 0.752,
+     "recall": 0.702,
+     "f1": 0.726
+    },
+    {
+     "class": "high_cart_hesitation",
+     "support": 117,
+     "precision": 0.817,
+     "recall": 0.838,
+     "f1": 0.827
+    },
+    {
+     "class": "price_sensitivity",
+     "support": 176,
+     "precision": 0.824,
+     "recall": 0.881,
+     "f1": 0.852
+    },
+    {
+     "class": "technical_friction",
+     "support": 124,
+     "precision": 0.966,
+     "recall": 0.927,
+     "f1": 0.947
+    }
+   ]
+  },
+  "overdue_receivable": {
+   "n": 302,
+   "accuracy": 0.8675496688741722,
+   "majority_baseline": 0.38741721854304634,
+   "log_loss": 0.36411826991918506,
+   "confidence_calibration_error": 0.020198359185306377,
+   "confidence_reliability": [
+    {
+     "bin": "0.4-0.5",
+     "n": 4,
+     "mean_predicted": 0.4645877110991283,
+     "observed_rate": 0.75
+    },
+    {
+     "bin": "0.5-0.6",
+     "n": 20,
+     "mean_predicted": 0.5554422629195863,
+     "observed_rate": 0.5
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 33,
+     "mean_predicted": 0.6811999125591013,
+     "observed_rate": 0.6363636363636364
+    },
+    {
+     "bin": "0.8-0.9",
+     "n": 65,
+     "mean_predicted": 0.8188252654319259,
+     "observed_rate": 0.8461538461538461
+    },
+    {
+     "bin": "0.9-1.0",
+     "n": 180,
+     "mean_predicted": 0.9634537244478589,
+     "observed_rate": 0.9611111111111111
+    }
+   ],
+   "per_class": [
+    {
+     "class": "cash_flow_issue",
+     "support": 117,
+     "precision": 0.85,
+     "recall": 0.872,
+     "f1": 0.861
+    },
+    {
+     "class": "chronic_late_payer",
+     "support": 106,
+     "precision": 0.872,
+     "recall": 0.896,
+     "f1": 0.884
+    },
+    {
+     "class": "dispute_pending",
+     "support": 42,
+     "precision": 0.878,
+     "recall": 0.857,
+     "f1": 0.867
+    },
+    {
+     "class": "invoice_error",
+     "support": 37,
+     "precision": 0.906,
+     "recall": 0.784,
+     "f1": 0.841
+    }
+   ]
+  }
+ },
+ "recovery": {
+  "payment_failure": {
+   "n": 974,
+   "overall_brier": 0.1466,
+   "overall_calibration_error": 0.0295,
+   "overall_auc": 0.7421,
+   "reliability": [
+    {
+     "bin": "0.0-0.1",
+     "n": 341,
+     "mean_predicted": 0.05719901900791857,
+     "observed_rate": 0.05571847507331378
+    },
+    {
+     "bin": "0.1-0.2",
+     "n": 247,
+     "mean_predicted": 0.14889097461222645,
+     "observed_rate": 0.1700404858299595
+    },
+    {
+     "bin": "0.2-0.3",
+     "n": 152,
+     "mean_predicted": 0.2423717626026272,
+     "observed_rate": 0.2894736842105263
+    },
+    {
+     "bin": "0.3-0.4",
+     "n": 124,
+     "mean_predicted": 0.3438810539435545,
+     "observed_rate": 0.3870967741935484
+    },
+    {
+     "bin": "0.4-0.5",
+     "n": 68,
+     "mean_predicted": 0.44655954054431496,
+     "observed_rate": 0.4264705882352941
+    },
+    {
+     "bin": "0.5-0.6",
+     "n": 26,
+     "mean_predicted": 0.5449257059205539,
+     "observed_rate": 0.6153846153846154
+    },
+    {
+     "bin": "0.6-0.7",
+     "n": 13,
+     "mean_predicted": 0.6237767767880081,
+     "observed_rate": 0.23076923076923078
+    },
+    {
+     "bin": "0.7-0.8",
+     "n": 3,
+     "mean_predicted": 0.7129619816165302,
+     "observed_rate": 0.0
+    }
+   ],
+   "per_action": [
+    {
+     "action": "do_nothing",
+     "n": 196,
+     "observed_rate": 0.1122,
+     "mean_predicted": 0.1078,
+     "brier": 0.099,
+     "calibration_error": 0.0262,
+     "auc": 0.6395
+    },
+    {
+     "action": "immediate_retry",
+     "n": 202,
+     "observed_rate": 0.198,
+     "mean_predicted": 0.1807,
+     "brier": 0.1297,
+     "calibration_error": 0.0245,
+     "auc": 0.7687
+    },
+    {
+     "action": "delayed_retry@12",
+     "n": 193,
+     "observed_rate": 0.3212,
+     "mean_predicted": 0.2504,
+     "brier": 0.2026,
+     "calibration_error": 0.1142,
+     "auc": 0.7144
+    },
+    {
+     "action": "delayed_retry@48",
+     "n": 183,
+     "observed_rate": 0.2404,
+     "mean_predicted": 0.2287,
+     "brier": 0.165,
+     "calibration_error": 0.0827,
+     "auc": 0.7368
+    },
+    {
+     "action": "prompt_new_payment_method",
+     "n": 200,
+     "observed_rate": 0.165,
+     "mean_predicted": 0.2137,
+     "brier": 0.1392,
+     "calibration_error": 0.0516,
+     "auc": 0.6153
+    }
+   ],
+   "train_counts": {
+    "do_nothing": 659,
+    "immediate_retry": 589,
+    "delayed_retry@12": 544,
+    "delayed_retry@48": 632,
+    "prompt_new_payment_method": 602
+   }
+  },
+  "checkout_abandonment": {
+   "n": 568,
+   "overall_brier": 0.2059,
+   "overall_calibration_error": 0.0657,
+   "overall_auc": 0.7148,
+   "reliability": [
+    {
+     "bin": "0.0-0.1",
+     "n": 52,
+     "mean_predicted": 0.07112707834692962,
+     "observed_rate": 0.09615384615384616
+    },
+    {
+     "bin": "0.1-0.2",
+     "n": 111,
+     "mean_predicted": 0.1466365482332739,
+     "observed_rate": 0.21621621621621623
+    },
+    {
+     "bin": "0.2-0.3",
+     "n": 86,
+     "mean_predicted": 0.25111404350699645,
+     "observed_rate": 0.22093023255813954
+    },
+    {
+     "bin": "0.3-0.4",
+     "n": 89,
+     "mean_predicted": 0.34749142696700885,
+     "observed_rate": 0.43820224719101125
+    },
+    {
+     "bin": "0.4-0.5",
+     "n": 88,
+     "mean_predicted": 0.4456116600636033,
+     "observed_rate": 0.4318181818181818
+    },
+    {
+     "bin": "0.5-0.6",
+     "n": 46,
+     "mean_predicted": 0.5571917760895867,
+     "observed_rate": 0.6521739130434783
+    },
+    {
+     "bin": "0.6-0.7",
+     "n": 45,
+     "mean_predicted": 0.6484659298842922,
+     "observed_rate": 0.5555555555555556
+    },
+    {
+     "bin": "0.7-0.8",
+     "n": 28,
+     "mean_predicted": 0.7477796492902267,
+     "observed_rate": 0.5714285714285714
+    },
+    {
+     "bin": "0.8-0.9",
+     "n": 16,
+     "mean_predicted": 0.8434170342412228,
+     "observed_rate": 0.6875
+    },
+    {
+     "bin": "0.9-1.0",
+     "n": 7,
+     "mean_predicted": 0.9350197422371656,
+     "observed_rate": 1.0
+    }
+   ],
+   "per_action": [
+    {
+     "action": "do_nothing",
+     "n": 109,
+     "observed_rate": 0.1284,
+     "mean_predicted": 0.1115,
+     "brier": 0.1093,
+     "calibration_error": 0.0231,
+     "auc": 0.6233
+    },
+    {
+     "action": "send_reminder_email",
+     "n": 123,
+     "observed_rate": 0.3089,
+     "mean_predicted": 0.3397,
+     "brier": 0.1872,
+     "calibration_error": 0.0919,
+     "auc": 0.717
+    },
+    {
+     "action": "send_reminder_whatsapp",
+     "n": 99,
+     "observed_rate": 0.4848,
+     "mean_predicted": 0.4045,
+     "brier": 0.2362,
+     "calibration_error": 0.1421,
+     "auc": 0.6708
+    },
+    {
+     "action": "offer_bounded_discount@5",
+     "n": 119,
+     "observed_rate": 0.4622,
+     "mean_predicted": 0.442,
+     "brier": 0.2595,
+     "calibration_error": 0.1191,
+     "auc": 0.577
+    },
+    {
+     "action": "offer_bounded_discount@10",
+     "n": 118,
+     "observed_rate": 0.5,
+     "mean_predicted": 0.5163,
+     "brier": 0.2353,
+     "calibration_error": 0.0808,
+     "auc": 0.6418
+    }
+   ],
+   "train_counts": {
+    "do_nothing": 357,
+    "send_reminder_email": 396,
+    "send_reminder_whatsapp": 386,
+    "offer_bounded_discount@5": 424,
+    "offer_bounded_discount@10": 369
+   }
+  },
+  "overdue_receivable": {
+   "n": 302,
+   "overall_brier": 0.2068,
+   "overall_calibration_error": 0.0693,
+   "overall_auc": 0.7171,
+   "reliability": [
+    {
+     "bin": "0.0-0.1",
+     "n": 59,
+     "mean_predicted": 0.024620989488652493,
+     "observed_rate": 0.05084745762711865
+    },
+    {
+     "bin": "0.1-0.2",
+     "n": 31,
+     "mean_predicted": 0.1462139371585178,
+     "observed_rate": 0.3225806451612903
+    },
+    {
+     "bin": "0.2-0.3",
+     "n": 37,
+     "mean_predicted": 0.25507799549977295,
+     "observed_rate": 0.32432432432432434
+    },
+    {
+     "bin": "0.3-0.4",
+     "n": 40,
+     "mean_predicted": 0.35493531876065676,
+     "observed_rate": 0.4
+    },
+    {
+     "bin": "0.4-0.5",
+     "n": 56,
+     "mean_predicted": 0.4438284271301139,
+     "observed_rate": 0.4642857142857143
+    },
+    {
+     "bin": "0.5-0.6",
+     "n": 49,
+     "mean_predicted": 0.5511359518283151,
+     "observed_rate": 0.6326530612244898
+    },
+    {
+     "bin": "0.6-0.7",
+     "n": 20,
+     "mean_predicted": 0.6422637864771528,
+     "observed_rate": 0.5
+    },
+    {
+     "bin": "0.7-0.8",
+     "n": 7,
+     "mean_predicted": 0.7277629065116472,
+     "observed_rate": 0.7142857142857143
+    },
+    {
+     "bin": "0.8-0.9",
+     "n": 3,
+     "mean_predicted": 0.826751778078206,
+     "observed_rate": 0.3333333333333333
+    }
+   ],
+   "per_action": [
+    {
+     "action": "do_nothing",
+     "n": 78,
+     "observed_rate": 0.1795,
+     "mean_predicted": 0.228,
+     "brier": 0.1569,
+     "calibration_error": 0.0985,
+     "auc": 0.6183
+    },
+    {
+     "action": "automated_reminder",
+     "n": 71,
+     "observed_rate": 0.4366,
+     "mean_predicted": 0.3275,
+     "brier": 0.2292,
+     "calibration_error": 0.1642,
+     "auc": 0.6879
+    },
+    {
+     "action": "automated_reminder_with_payment_plan_offer",
+     "n": 63,
+     "observed_rate": 0.5397,
+     "mean_predicted": 0.4014,
+     "brier": 0.2077,
+     "calibration_error": 0.1383,
+     "auc": 0.7515
+    },
+    {
+     "action": "escalate_to_collections",
+     "n": 90,
+     "observed_rate": 0.3889,
+     "mean_predicted": 0.3953,
+     "brier": 0.2317,
+     "calibration_error": 0.1265,
+     "auc": 0.6436
+    }
+   ],
+   "train_counts": {
+    "do_nothing": 220,
+    "automated_reminder": 216,
+    "automated_reminder_with_payment_plan_offer": 233,
+    "escalate_to_collections": 229
+   }
+  }
+ }
+}

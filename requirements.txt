@@ -1,0 +1,35 @@
+# Runtime dependencies for the Revenue Recovery Agent.
+#
+# Three, and each one is load-bearing. The floors are the oldest releases whose
+# APIs this code actually uses; the ceilings exclude the next major version,
+# because a project whose whole argument is auditability should not silently
+# change arithmetic library underneath a recorded decision.
+#
+# Verified against python 3.10.12 with numpy 2.2.6, pandas 2.3.3, PyYAML 6.0.3.
+
+numpy>=1.24,<3          # every model: the logistic regression is hand-written
+pandas>=2.0,<3          # CSV loading, feature frames, the benchmark's bookkeeping
+PyYAML>=6.0,<7          # config/policy.yaml, the one source of every money limit
+
+# Deliberately absent, and each absence is a decision rather than an oversight:
+#
+#   scikit-learn — the multinomial logistic regression is implemented in
+#     src/ml/logistic.py in numpy and serialises to JSON. A model a reviewer can
+#     read as text beats a pickle they have to trust, and pickle is a code
+#     execution format, which is not a thing to put in a money pipeline.
+#
+#   fastapi, uvicorn — the dashboard was specified to be served by FastAPI.
+#     `pip install fastapi uvicorn` fails in this build environment (the network
+#     proxy returns 403 for PyPI), so src/server.py is built on stdlib
+#     http.server. That is a substitution and it is recorded in the README and
+#     CHANGELOG rather than presented as a preference.
+#
+#   anthropic — the narrator talks to the Messages API over urllib.request in
+#     about forty lines. One less dependency in the process that holds an API
+#     key, and the transport stays a seam tests can replace.
+#
+#   pytest — the suite is stdlib unittest. A test suite that cannot run because
+#     a test runner is missing is not a test suite. Run it with:
+#         python -m unittest discover -s tests -t .
+#
+# There is no requirements-dev.txt because there is nothing to put in it.
