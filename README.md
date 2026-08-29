@@ -16,19 +16,19 @@ recorded, and differed only by floating-point noise.
 
 ```bash
 pip install -r requirements.txt
-python run_pipeline.py
+python run.py
 ```
 
-That's it. `run_pipeline.py` generates the synthetic dataset, trains the
+That's it. `run.py` generates the synthetic dataset, trains the
 models, runs a sweep over the held-out test split, scores the agent against
 baselines, verifies the audit chain, and opens the dashboard — skipping
 any step whose output already exists, so re-running it is safe and fast.
 
 ```bash
-python run_pipeline.py --no-serve   # build everything, skip the dashboard
-python run_pipeline.py --check      # verify the audit chain + run all tests
-python run_pipeline.py --force      # redo every step, including a fresh sweep
-python run_pipeline.py --port 8080  # dashboard on a specific port
+python run.py --no-serve   # build everything, skip the dashboard
+python run.py --check      # verify the audit chain + run all tests
+python run.py --force      # redo every step, including a fresh sweep
+python run.py --port 8080  # dashboard on a specific port
 ```
 
 **Why re-running isn't the default behaviour of a bare command.** Two
@@ -37,10 +37,10 @@ of these steps aren't idempotent the way a build step is:
 append-only, so a second sweep doesn't replace the first — it adds to it.
 Silently redoing either on every run would quietly invalidate the exact
 figures this README and `artifacts/verified_metrics.md` quote. So
-`run_pipeline.py` builds only what's missing by default, and `--force`
+`run.py` builds only what's missing by default, and `--force`
 says out loud what it's about to change before it changes it.
 
-Nothing about `run_pipeline.py` is required — every step is a single
+Nothing about `run.py` is required — every step is a single
 command, listed individually below, and running them by hand is the
 better way to actually understand the project.
 
@@ -59,15 +59,15 @@ python -m src.server --open             # Recovery Command Centre dashboard
 `python src/train.py`. The package uses relative imports
 (`from . import config`), so invoking a file directly inside `src/`
 fails with `ImportError: attempted relative import with no known parent
-package`. `run_pipeline.py` always uses the correct form for you.
+package`. `run.py` always uses the correct form for you.
 
 ## What makes this different from "detect a failure, retry it"
 
-Most recovery systems automate retries. This agent decides *whether* to
+Most recovery systems automate retries. This agent decides _whether_ to
 retry, wait, incentivise, contact, route to finance, or deliberately do
 nothing — ranked by expected net recovery, not by a fixed rule per root
 cause. Doing nothing is a first-class, often-correct output: every action
-is scored as its incremental value *against* doing nothing, so
+is scored as its incremental value _against_ doing nothing, so
 `do_nothing` always scores exactly zero, and a negative-value action is
 provably worse than inaction rather than merely undesirable.
 
@@ -121,7 +121,7 @@ flowchart LR
         DASH["index.html\nRecovery Command Centre\nCSP-hardened, no CDN calls"]
     end
 
-    RUN["run_pipeline.py\none command,\norchestrates everything below"]
+    RUN["run.py\none command,\norchestrates everything below"]
 
     RUN --> GEN
     GEN --> SCHEMAS
@@ -159,8 +159,8 @@ flowchart TD
 ```
 
 Fraud-suspected payments are a deliberate example of **defence in
-depth**: penalised by the chargeback term in the economics scoring *and*
-hard-blocked in guardrails *and* excluded by the never-retry root-cause
+depth**: penalised by the chargeback term in the economics scoring _and_
+hard-blocked in guardrails _and_ excluded by the never-retry root-cause
 list in `config/policy.yaml`. Three independent mechanisms, so a gap in
 one doesn't become a gap in the system.
 
@@ -178,7 +178,7 @@ compares it to what's stored. Tampering with a single field in one
 record breaks verification at that exact line — the reason and record id
 are printed, not a generic "corrupted" message. The file is append-only:
 running a sweep twice grows it, it never truncates or overwrites, which
-is exactly why `run_pipeline.py` treats an existing audit trail as
+is exactly why `run.py` treats an existing audit trail as
 "done" rather than redoing it silently.
 
 ### LLM narration boundary
@@ -201,7 +201,7 @@ it checks (hallucinated figures, forbidden phrases, out-of-scope roles).
 ## Repository structure
 
 ```
-run_pipeline.py    -> one command: build everything, then serve
+run.py    -> one command: build everything, then serve
 
 data/
   generate_*.py    -> synthetic customers, payments, checkout, receivables
@@ -251,7 +251,7 @@ artifacts/         -> trained model JSON (no pickle), training_report.json,
 
 tests/             -> 264 tests: defensive posture, audit integrity,
                        economics, guardrail policy, narrator boundary,
-                       server API. Run via `python run_pipeline.py --check`
+                       server API. Run via `python run.py --check`
                        or `python -m unittest discover -s tests -t .`
 ```
 
@@ -265,7 +265,7 @@ of sync:
   they perform (with baselines, not bare accuracy), and an honest section
   on why simple models were a deliberate choice for this problem
 - **[`SECURITY.md`](SECURITY.md)** — the defensive posture, organised by
-  what the system *cannot* do, with the mechanism and the test that holds
+  what the system _cannot_ do, with the mechanism and the test that holds
   each one down
 - **[`artifacts/verified_metrics.md`](artifacts/verified_metrics.md)** —
   every number that appears anywhere in this project's documentation,
@@ -281,10 +281,10 @@ of sync:
   `loopback only, no authentication — do not expose this port` on
   startup, and means it.
 - **No authentication.** The operator name on an approval request
-  records who *claimed* responsibility; it isn't an identity check.
+  records who _claimed_ responsibility; it isn't an identity check.
   Wiring a real identity layer is a small, isolated change, not a
   redesign — but it isn't done here.
-- **Hash-chain gives tamper *evidence*, not tamper *proofing*.** Someone
+- **Hash-chain gives tamper _evidence_, not tamper _proofing_.** Someone
   with write access to the audit file could recompute the entire chain
   from genesis. Real immutability needs an external anchor (WORM
   storage, or shipping the chain head somewhere the agent can't reach).
