@@ -10,7 +10,7 @@ Entry points (run from the project root):
     python -m src.train             # fit and report on the models
     python -m src.agent run         # run a sweep, write the audit trail
     python -m src.benchmark         # baselines vs the agent, with CIs
-    python -m src.server            # Recovery Command Centre dashboard
+    python -m src.server            # Recon dashboard
 
 Or `python run.py` to do all of the above in order.
 """

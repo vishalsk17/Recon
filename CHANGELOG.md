@@ -177,7 +177,7 @@ decisions routed to a person, 4,925 refusals each with a stated reason, and a
 hash-linked record of every one. The per-event oracle recovers 13,163,161, so
 there is a large amount of headroom and the honest thing is to name it.
 
-**3. A Recovery Command Centre dashboard.** A single-file HTML and JavaScript
+**3. A Recon dashboard.** A single-file HTML and JavaScript
 dashboard served by `src/server.py`, no build step, thirteen routes of which
 eleven are GET. FastAPI was specified in the brief and is not available in this
 environment; a stdlib `http.server` is a substitution rather than a preference,

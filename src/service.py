@@ -1,5 +1,5 @@
 """
-The application layer behind the Recovery Command Centre.
+The application layer behind the Recon.
 
 Every function here takes plain arguments and returns JSON-able dicts. None of
 them know what HTTP is, which is the point: the read model, the approval flow

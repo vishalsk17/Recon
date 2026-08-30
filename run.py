@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     command = [sys.executable, "-m", "src.server", "--open"]
     if args.port is not None:
         command += ["--port", str(args.port)]
-    print(f"\n{'=' * 74}\nStarting the Recovery Command Centre\n{'=' * 74}", flush=True)
+    print(f"\n{'=' * 74}\nStarting the Recon\n{'=' * 74}", flush=True)
     # Not via _run: this one blocks until Ctrl-C, and its own handler prints the
     # goodbye. Exec-style hand-off keeps the exit code honest.
     return subprocess.run(command, cwd=HERE).returncode

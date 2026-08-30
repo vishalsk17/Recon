@@ -111,7 +111,7 @@ python -m src.train                     # fit root-cause + per-action recovery m
 python -m src.agent run --split test    # sweep the held-out split, write the audit trail
 python -m src.benchmark                 # agent vs. baselines, bootstrapped CIs
 python -m src.agent verify              # check the audit hash chain
-python -m src.server --open             # Recovery Command Centre dashboard
+python -m src.server --open             # Recon dashboard
 ```
 
 **Run everything with `-m` from the project root**, not
@@ -150,7 +150,7 @@ flowchart TD
     G -->|blocked / low confidence /\nabove auto-approve ceiling| I["request_human_review\nqueued in the dashboard"]
     H --> J["src/audit.py\nappend hash-chained record"]
     I --> J
-    J --> K["Recovery Command Centre\ndashboard + API"]
+    J --> K["Recon\ndashboard + API"]
 ```
 
 ### System components
@@ -177,7 +177,7 @@ flowchart LR
     end
 
     subgraph UI["web/"]
-        DASH["index.html\nRecovery Command Centre\nCSP-hardened, no CDN calls"]
+        DASH["index.html\nRecon\nCSP-hardened, no CDN calls"]
     end
 
     RUN["run.py\none command,\norchestrates everything below"]
@@ -287,7 +287,7 @@ src/
   service.py       -> business logic behind the dashboard API
   server.py        -> stdlib-only HTTP server serving the dashboard + API
   benchmark.py     -> agent vs. baselines with bootstrapped confidence intervals
-  web/index.html   -> Recovery Command Centre dashboard
+  web/index.html   -> Recon dashboard
 
 config/policy.yaml   -> tunable limits for discount caps, retry caps,
                         contact frequency, quiet hours, auto-approve ceilings

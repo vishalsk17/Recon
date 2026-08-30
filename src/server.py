@@ -1,5 +1,5 @@
 """
-The HTTP layer for the Recovery Command Centre.
+The HTTP layer for the Recon.
 
 A deliberately small stdlib server. Every route is a thin wrapper over
 `src/service.py`, which is where the logic lives; this file's whole job is
@@ -408,7 +408,7 @@ def serve(port: int = DEFAULT_PORT, host: str = "127.0.0.1",
 
     cfg = C.load_config()
     url = f"http://{bind}:{port}/"
-    print(f"Recovery Command Centre  ->  {url}")
+    print(f"Recon  ->  {url}")
     print(f"  code {C.CODE_VERSION} | policy {C.policy_version(cfg)} | "
           f"dry_run={cfg['execution']['dry_run']} | live transport: not implemented")
     print(f"  loopback only, no authentication — do not expose this port")
@@ -431,7 +431,7 @@ def serve(port: int = DEFAULT_PORT, host: str = "127.0.0.1",
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m src.server",
-        description="Serve the Recovery Command Centre dashboard on loopback.",
+        description="Serve the Recon dashboard on loopback.",
     )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
                         help=f"port to listen on (default {DEFAULT_PORT})")
