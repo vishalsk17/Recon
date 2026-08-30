@@ -51,7 +51,7 @@ PowerShell examples:
 $env:ANTHROPIC_API_KEY="sk-ant-..."
 # or
 $env:OPENAI_API_KEY="sk-..."
-# or for custom OpenAI-compatible gateways
+# or for custom OpenAI-compatible gateways.
 $env:LLM_API_KEY="..."
 $env:LLM_BASE_URL="https://your-gateway.example.com/v1/chat/completions"
 ```
