@@ -130,7 +130,6 @@ every recognised variable before it runs.
 
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import re
@@ -300,12 +299,13 @@ PROVIDERS: tuple[Provider, ...] = (
 ENV_KEYS: tuple[str, ...] = tuple(
     name for provider in PROVIDERS for name in provider.env_keys
 )
-# Backward-compatible aliases used by the historical tests and the service
-# layer. The module uses the registry-based `ENV_KEYS` for safety, but older
-# code still refers to the canonical single environment variable name.
-ENV_KEY = ENV_KEYS[0] if ENV_KEYS else "ANTHROPIC_API_KEY"
-API_URL = PROVIDERS[0].url if PROVIDERS else "https://api.anthropic.com/v1/messages"
-
+# There is deliberately no `ENV_KEY` or `API_URL` singular alias here. Two
+# reasons, both learned the hard way. A module-level constant holding "the" key
+# variable is the exact shape a real credential once got pasted over in this
+# file, and one name is easier to overwrite than a validated registry. And an
+# alias would be a lie: there is no canonical variable any more, so code that
+# reads one would be right for Anthropic and quietly wrong for the other eight.
+# Callers that want a name want `ENV_KEYS` or `credentials_hint()`.
 PROVIDERS_BY_NAME: Mapping[str, Provider] = {p.name: p for p in PROVIDERS}
 
 # Where a custom endpoint may come from, config taking precedence.
@@ -1159,24 +1159,17 @@ class Narrator:
     # -- transport with visible backoff -------------------------------
 
     def _call(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        # The transport takes the endpoint explicitly rather than reading it off
+        # the instance, so a test double sees exactly what the real transport
+        # sees. An earlier revision sniffed the callable's signature and passed
+        # three arguments to older doubles; that made the shipped four-argument
+        # path the one path no test exercised, which is the opposite of what a
+        # seam is for. One signature, no branch.
         last: Optional[Exception] = None
-        accepts_endpoint = False
-        try:
-            sig = inspect.signature(self.transport)
-            params = list(sig.parameters.values())
-            positional = [p for p in params if p.kind in (inspect.Parameter.POSITIONAL_ONLY,
-                                                       inspect.Parameter.POSITIONAL_OR_KEYWORD)]
-            accepts_endpoint = len(positional) >= 4 or any(p.kind == inspect.Parameter.VAR_POSITIONAL
-                                                           for p in params)
-        except (TypeError, ValueError):
-            accepts_endpoint = True
-
         for attempt in range(1, 4):
             try:
-                if accepts_endpoint:
-                    return self.transport(payload, self._api_key, self.timeout,
-                                          self.endpoint)
-                return self.transport(payload, self._api_key, self.timeout)
+                return self.transport(payload, self._api_key, self.timeout,
+                                      self.endpoint)
             except urllib.error.HTTPError as exc:
                 # 4xx other than 429 will not fix themselves, so do not retry
                 # them — retrying a bad request is how a quota gets burned.

@@ -27,6 +27,16 @@ surface, answering "why is this revenue at risk". Four to five classes each.
 the chance it recovers". Fourteen models across three surfaces. These feed
 directly into the expected-net-recovery arithmetic in `src/economics.py`.
 
+Two actions are priced without a fitted model, and the count above excludes them
+on purpose. `stop_and_flag_fraud` has `P(recover) = 0.0` — a blocked payment does
+not settle, which is a definition rather than an estimate — and
+`request_human_review` is priced at 0.85 of the best automated option's ENR,
+which is a stated assumption about how well a person does with a case a machine
+declined to take. Both carry `probability_is_assumed=True` through to the audit
+record and onto the dashboard, so a reviewer reading either decision is told the
+number is an assumption instead of having to know it. Fourteen fitted models plus
+two stated assumptions is the honest description of what prices a candidate set.
+
 Both families are implemented in `src/ml/logistic.py`: gradient descent, L2
 regularisation, numpy only, about 235 lines. No scikit-learn.
 
@@ -173,14 +183,24 @@ P(recover | event, action)─┘         (economics.py)                    (guar
 Expected net recovery, per candidate, incremental against doing nothing:
 
 ```
-ENR(a) = ΔP(recover) × value_at_risk × margin_basis
-       − action cost
-       − failure penalty × P(fail)
-       − discount given
-       − contact fatigue
-       − incremental chargeback exposure
-       + retained future value × ltv_retention_weight
+ENR(a) = incremental_margin(a)
+       − action_cost(a)
+       − expected_failure_cost(a)
+       − incremental_chargeback_cost(a)
+       − contact_fatigue_penalty(a)
+       + incremental_retained_ltv(a)
 ```
+
+The discount is not a term of its own. It lives inside `incremental_margin`,
+because a discount is given to everyone who converts — including the customers
+who would have converted anyway — so the correct comparison is
+`p_a × amount × (margin − discount)` against `p_0 × amount × margin`. Writing
+the discount as a separate subtraction would charge it only against the
+incremental converters and would therefore make discounting look cheaper than it
+is. Every term is differenced against doing nothing, which is why `do_nothing`
+scores exactly 0.0 and why a negative ENR means an action is worse than
+inaction rather than merely worse than the alternatives. The authoritative form
+is the docstring of `src/economics.py`.
 
 Then guardrails run, and they can only ever say **no**. Economics proposes;
 policy disposes. On the shipped sweep, policy refused 4,925 options and routed
@@ -190,6 +210,12 @@ The models therefore cannot cause an action that policy forbids, no matter how
 wrong they are. A miscalibrated probability can cause a *worse choice among
 permitted actions*, or an unnecessary human review, and that is the actual blast
 radius of model error in this design. It is a deliberately small one.
+
+Nothing in the diagram above is a language model, and that is the point of the
+diagram. `src/narrator.py` sits strictly downstream of `chosen`: it renders a
+decision that has already been made into prose, it has no tools, and no module
+on the path from an event to an executed action imports it. `python -m src.agent
+run` makes and executes every decision with no language model in the process.
 
 ---
 
@@ -263,6 +289,20 @@ calibrate better at these sample sizes. That is the first thing to try next.
 totals, refusal counts) come from one run over one split. Only the benchmark
 comparison is bootstrapped. Treat the sweep figures as a description of that run
 rather than as estimates.
+
+**Narration is a third-party model call, and this card does not cover it.** When
+narration is enabled, a fact sheet derived from an already-made decision — the
+surface, the customer segment, relationship length, prior payment count, contacts
+in the last seven days, rupee amounts, the chosen action and the options policy
+refused — is POSTed to whichever vendor `llm.provider` selects. It carries no
+name, address, contact detail or account identifier, which is what makes sending
+it to a third party defensible at all, but it is still relationship context
+leaving the process. Nine providers are supported plus any OpenAI-compatible
+endpoint, output is validated by the same gate regardless of which one is used,
+and the vendor is recorded on each `Draft` rather than inferred. None of the
+models this card describes are involved, and no decision depends on the call:
+which vendor sees the fact sheet is an operator choice, not a property of these
+models.
 
 ---
 

@@ -24,9 +24,14 @@ PyYAML>=6.0,<7          # config/policy.yaml, the one source of every money limi
 #     http.server. That is a substitution and it is recorded in the README and
 #     CHANGELOG rather than presented as a preference.
 #
-#   anthropic — the narrator talks to the Messages API over urllib.request in
-#     about forty lines. One less dependency in the process that holds an API
-#     key, and the transport stays a seam tests can replace.
+#   anthropic, and every other vendor SDK — src/narrator.py speaks three
+#     dialects over urllib.request: Anthropic Messages, OpenAI
+#     chat-completions, and Gemini generateContent. Between them those three
+#     cover nine providers and anything else that is OpenAI-compatible, so the
+#     absence here is nine SDKs avoided rather than one. No SDK runs in the
+#     process that holds an API key, there is no per-vendor code path in which
+#     a per-vendor capability could be switched on, and the transport stays a
+#     single seam tests can replace.
 #
 #   pytest — the suite is stdlib unittest. A test suite that cannot run because
 #     a test runner is missing is not a test suite. Run it with:

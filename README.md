@@ -68,6 +68,25 @@ The project accepts these variable names for the built-in providers:
 - XAI_API_KEY
 - LLM_API_KEY (custom provider)
 
+One further variable is recognised and is not a key:
+
+- LLM_BASE_URL — the endpoint to POST to, equivalent to `llm.base_url` in
+  `config/policy.yaml`, which takes precedence over it. Required for the
+  custom provider and optional for the others, where it overrides that
+  vendor's default endpoint.
+
+A custom endpoint is checked before anything is sent to it: https is
+required, or plain http only to 127.0.0.1, ::1 or localhost so that a local
+Ollama or vLLM works; no credentials in the userinfo position, because a key
+belongs in a header rather than in a URL that gets logged; and no query
+string. The reason is that the fact sheet is relationship context — segment,
+tenure, contact history, amounts — so the set of hosts it may be POSTed to
+should be bounded rather than whatever a config file happens to name.
+
+`llm.model` in the same config file selects the model, and blank means the
+provider's own default, so one config works with an Anthropic key or a
+Gemini one.
+
 The key itself is never written into the generated draft or stored in the
 recovery record.
 
@@ -172,7 +191,7 @@ flowchart LR
     AGENT --> ADAPT
     AUDIT --> SVC --> SRV --> DASH
     SVC --> NARR
-    NARR -.optional, requires\nANTHROPIC_API_KEY.-> SVC
+    NARR -.optional, requires\nany provider API key.-> SVC
     RUN --> SRV
 ```
 
@@ -295,8 +314,11 @@ of sync:
   every number that appears anywhere in this project's documentation,
   with the exact command that produced it. Nothing is quoted here that
   isn't recorded there first.
-- **[`improvements.md`](improvements.md)** — the original design brief
-  this project was built against
+- **[`CHANGELOG.md`](CHANGELOG.md)** — what changed from v2 to v3 and why,
+  including the bugs found on the way and what each one cost to find
+- **`improvements.md`** — the original design brief this project was built
+  against. It lives with the previous version rather than here, because it
+  describes work this version has done rather than work it plans to do.
 
 ## Known limitations
 

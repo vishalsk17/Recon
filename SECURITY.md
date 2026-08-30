@@ -14,7 +14,7 @@ claim from "it is configured safely", and it is the claim this file makes.
 
 What follows is organised by what the system *cannot* do, with the mechanism and
 the test that holds each one down. `python -m unittest discover -s tests -t .`
-runs all 264.
+runs all 296.
 
 ---
 
@@ -167,10 +167,31 @@ were wrong at once:
 None of the 259 tests then in the suite caught it, because all of them asserted
 behaviour and this was a constant. The repair was the constant, the stale
 bytecode, and five new tests: the scan, a proof that the scan fires on all nine
-shapes, a proof it does not fire on the eight lookalikes in this repo (a chain
+shapes, a proof it does not fire on the ten lookalikes in this repo (a chain
 digest, a run id, the `x-api-key` header name, the audit screener's field list,
-the narrator tests' deliberately-fake key), a pin on `ENV_KEY`, and a check that
-the refusal message cannot carry a secret.
+the narrator tests' deliberately-fake key, and the `sk-`, `AIza` and `Bearer `
+literals the provider registry has to contain in order to recognise a key by its
+prefix), a whitelist over every variable name in that registry — which replaced
+the original pin on one literal string — and a check that the refusal message
+cannot carry a secret.
+
+The pin became a whitelist because the refactor to nine providers turned one
+constant into ten names, and ten names cannot each be pinned to a literal. The
+whitelist is the stronger test rather than the looser one: it asks "is this a
+legal environment variable name", which no credential in any format satisfies,
+instead of "does this look like one of nine known secret shapes", which a tenth
+shape would walk straight past.
+
+`_validate_registry()` runs that whitelist **at import**, not in the test suite,
+and this is the structural repair rather than the detection one. Every name must
+match `[A-Z][A-Z0-9_]{2,63}`, no provider may claim a variable another provider
+already claims, and every shipped URL must pass the endpoint check below. A key
+pasted over any of those names now makes the module refuse to load at all, which
+is what the original incident needed: that key sat on disk serving `503`s for
+some time before any test ran. Crashing on import is safe here precisely because
+nothing on the money path imports this module. The refusal deliberately does not
+echo the offending value, and a test plants a credential-shaped name to prove the
+import fails and that the message stays clean.
 
 The scan covers the test files too, so the examples proving it fires are
 assembled from fragments at runtime rather than written as literals. Excluding
@@ -178,9 +199,27 @@ the test file was the alternative and it is worse: a test file is source, and
 the one place a pasted secret must not be able to hide is the file whose job is
 finding pasted secrets.
 
-**If you are reading this because you own that key: revoke it.** It was written
-to disk and printed on an error path, so it should be treated as compromised
-regardless of who is believed to have seen it.
+**The key was never committed.** This was established rather than assumed, by
+reading every object in the repository with `git cat-file --batch-all-objects`
+(which covers unreachable objects, unlike walking `git rev-list`) and scoring
+each credential-shaped match by Shannon entropy. Every historical version of
+`src/narrator.py` reads `ENV_KEY = "ANTHROPIC_API_KEY"`. One blob did match, and
+the entropy is what settled it: the two hits inside
+`tests/__pycache__/test_defensive_posture.cpython-310.pyc` score 0.08 and 0.00
+bits per character over two and one distinct characters, because they are this
+suite's own fragment-assembled fixtures compiled to bytecode. A real key runs
+around 4.5 bits per character. So the remote was never exposed.
+
+**If you own that key, revoke it anyway.** It was written to disk and printed on
+an error path, so it should be treated as compromised regardless of who is
+believed to have seen it. "It never reached a commit" bounds the blast radius; it
+does not clear the key.
+
+Two gaps the audit found on the way, both recorded because they are the mechanism
+by which this leak *would* have been published: `__pycache__` is not in a
+`.gitignore` and compiled modules are tracked, and the credential scan walks text
+extensions only, so it skips exactly the binary files a pasted constant gets
+compiled into. Neither is closed yet.
 
 ## It cannot learn from the answer
 
@@ -206,6 +245,18 @@ already-decided facts into language. It receives a fact sheet built from the
 **no tools**. It cannot select, price, approve, or re-time an action, because
 nothing it returns is read as anything but text.
 
+That absence now has to hold nine times. The module speaks to nine providers
+across three request dialects — Anthropic Messages, OpenAI chat-completions and
+Gemini `generateContent` — and not one of the three payload builders emits a
+`tools`, `tool_choice`, `functions` or `function_call` key. With no tools in the
+request there is no function-calling loop, so there is no path from a model's
+output to a side effect; that is a stronger claim than "we ignore tool calls",
+and it is what makes adding a provider a data change rather than a code change,
+because there is nowhere for a per-vendor capability to be switched on. The
+claim is asserted per provider, over every key at every depth of the payload —
+a shallow check would pass a request that hid `tools` one level down, which is
+where a vendor-specific format would put it.
+
 Three roles are permitted, listed in both `config/policy.yaml` and a tuple in
 the module; a role in config that the code cannot build a prompt for is a
 startup error, not a silent no-op. Output is validated before return: every
@@ -214,16 +265,62 @@ patterns (`legal action`, `police`, `credit score`, `final warning`, …) are
 refused, and length is capped. A draft that fails is retried once with the
 problems fed back, and then **raises**.
 
+`validate_draft` is deliberately one gate for all nine providers, and a test
+runs the same fabricated figure past every one of them. This is the answer to
+the obvious objection to making the vendor configurable: choosing a cheaper or a
+local model must not also choose a weaker validator. Which vendor was used is
+recorded on the `Draft` rather than inferred, because with nine providers
+configurable the environment at read time is no evidence of the environment at
+write time.
+
 There is no template fallback, by explicit design. A silent fallback is the
 worst of both worlds: the operator believes they are reading model output and
 they are not, and a misconfigured key produces plausible text instead of a stack
-trace. So a missing `ANTHROPIC_API_KEY` returns `503` naming the variable, and
-the refusal carries no `text`, `draft` or `body` key — a refusal must not
-contain anything that looks like a draft.
+trace. So no key at all returns `503` listing every variable it looked in —
+names only, never a value — with the provider list in the detail body, and the
+refusal carries no `text`, `draft` or `body` key, because a refusal must not
+contain anything that looks like a draft. Pinning `llm.provider` to a vendor
+whose key is absent refuses in the same way rather than falling through to
+whichever key happens to be set; quietly using a different vendor than the one
+configured is precisely the surprise this project exists to avoid.
+
+`GET /api/health` reports `narration_provider`: the vendor name, or null. A name
+only — never a key and never the endpoint, because a health endpoint is the
+first thing anyone reads and the last place a secret should be.
 
 The recovery pipeline does not import this module. `python -m src.agent run`
 makes and executes every decision with no language model in the process, which
 is the correct dependency direction for a system that moves money.
+
+## It cannot POST a fact sheet to an arbitrary host
+
+`llm.base_url` and `LLM_BASE_URL` exist so that any OpenAI-compatible gateway
+can be used — vLLM, Ollama, a private proxy — and for a pinned vendor they can
+also redirect to a regional endpoint. Both are legitimate. Both also make the
+one module that assembles relationship context into a request body pointable at
+a host of someone's choosing, which is to say a configurable base URL is an
+exfiltration setting unless something bounds it.
+
+`_check_endpoint` is that bound. It requires `https`, or plain `http` only to
+`127.0.0.1`, `::1` or `localhost` — the same three-item loopback whitelist
+`serve()` uses, as the same exact strings, so there is one list to get right
+rather than two to get differently wrong. Credentials in the userinfo position
+(`https://user:pass@host`) are refused, and so is any query string: Gemini will
+accept its key as `?key=`, and this module sends `x-goog-api-key` instead,
+because a key in a URL is a key in every access log, proxy log and error report
+that records the URL. A model name that lands in a URL path is percent-encoded,
+so a slashed name cannot climb out of its segment.
+
+Every shipped provider URL passes the same function at import, so a typo'd
+registry entry cannot ship. And there is exactly one `urlopen` in the module,
+which every provider goes through — so "what can this talk to" is answered by
+reading one function rather than by auditing a call site per vendor.
+
+What this does not defend against is a hostile operator: anyone who can edit
+`config/policy.yaml` can name any https host they like, and the fact sheet will
+go there. The check bounds accidents and typos and narrows the blast radius of a
+copied config; it is not a control over someone who already has write access to
+the configuration.
 
 ## It cannot quietly rewrite its own history
 

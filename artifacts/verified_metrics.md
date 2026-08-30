@@ -183,7 +183,9 @@ non-object body 400, non-integer limit 400, absurd limit clamped, three path
 traversal probes not served, `/api/sweep` 404 (the endpoint was removed rather
 than guarded), anonymous approval 400, `system`-signed approval 400, missing
 `granted` 400, string `granted` 400, unknown decision id 404, double approval
-409, narration without `ANTHROPIC_API_KEY` 503 naming the variable.
+409, narration with none of the ten recognised key variables set a 503 that
+names every variable it looked in and carries the provider list in its detail
+body.
 
 A signed approval returns `{"granted": true, "status": "awaiting_approval",
 "detail": "released by vishal — nothing is sent to the customer while a case is

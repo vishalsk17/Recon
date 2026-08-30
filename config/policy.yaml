@@ -201,8 +201,11 @@ llm:
   # override, but remember a model name is provider-specific: setting
   # "gpt-4o" and then running with a Gemini key is an error at startup.
   model: ""
-  # Only for provider "custom": the full chat-completions URL of any
+  # Required for provider "custom": the full chat-completions URL of any
   # OpenAI-compatible endpoint (vLLM, Ollama, Together, a private gateway).
+  # Optional for every other provider, where it overrides that vendor's
+  # default endpoint — a regional endpoint or a caching proxy in front of the
+  # vendor are the legitimate reasons to do that.
   # May also be given as LLM_BASE_URL. It is checked before use — https, or
   # http only to loopback, no credentials in the URL, no query string.
   base_url: ""
