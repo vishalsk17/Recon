@@ -89,8 +89,8 @@ contact:
   # Local-time window in which outreach is allowed (IST). Outside this
   # window the agent schedules for the next permitted slot rather than
   # sending. No 3am payment reminders.
-  quiet_hours_start: 21   # 21:00
-  quiet_hours_end: 9      # 09:00
+  quiet_hours_start: 21 # 21:00
+  quiet_hours_end: 9 # 09:00
   # Channels requiring explicit opt-in before use.
   consent_required_channels:
     - whatsapp
@@ -140,17 +140,17 @@ economics:
   # What each action costs to attempt, win or lose.
   action_cost_inr:
     do_nothing: 0.0
-    immediate_retry: 2.5          # gateway attempt fee
+    immediate_retry: 2.5 # gateway attempt fee
     delayed_retry: 2.5
-    prompt_new_payment_method: 1.2   # email/push
+    prompt_new_payment_method: 1.2 # email/push
     send_reminder_email: 0.8
     send_reminder_whatsapp: 2.0
-    offer_bounded_discount: 1.0      # the discount itself is priced separately
+    offer_bounded_discount: 1.0 # the discount itself is priced separately
     automated_reminder: 0.8
-    automated_reminder_with_payment_plan_offer: 3.5   # includes ops handling
-    escalate_to_collections: 250.0   # agency/legal handling cost
+    automated_reminder_with_payment_plan_offer: 3.5 # includes ops handling
+    escalate_to_collections: 250.0 # agency/legal handling cost
     stop_and_flag_fraud: 0.0
-    request_human_review: 40.0       # ~15 min of an analyst's time
+    request_human_review: 40.0 # ~15 min of an analyst's time
 
   # Extra penalty applied when an action fails, beyond its attempt cost.
   # A failed retry carries issuer-reputation risk; a failed message
@@ -160,7 +160,7 @@ economics:
     delayed_retry: 3.0
     send_reminder_whatsapp: 6.0
     offer_bounded_discount: 3.0
-    escalate_to_collections: 400.0   # relationship damage if unwarranted
+    escalate_to_collections: 400.0 # relationship damage if unwarranted
 
   # Customer-experience cost of contacting someone who has already been
   # contacted recently, per prior contact in the window. Scales the
@@ -190,8 +190,23 @@ economics:
 # flags control what it is allowed to touch at all.
 # ---------------------------------------------------------------------
 llm:
-  model: "claude-sonnet-4-5"
-  max_tokens: 700
+  # Which vendor to talk to. "auto" takes the first provider whose API key
+  # is present in the environment, in the order src/narrator.py declares
+  # them. Naming one instead — anthropic, openai, gemini, groq, mistral,
+  # deepseek, openrouter, xai, custom — pins it, and narration then refuses
+  # if that provider's key is missing rather than quietly using another.
+  provider: auto
+  # Blank means "whatever that provider's default model is", so the same
+  # config works with an Anthropic key or a Gemini one. Pin a model here to
+  # override, but remember a model name is provider-specific: setting
+  # "gpt-4o" and then running with a Gemini key is an error at startup.
+  model: ""
+  # Only for provider "custom": the full chat-completions URL of any
+  # OpenAI-compatible endpoint (vLLM, Ollama, Together, a private gateway).
+  # May also be given as LLM_BASE_URL. It is checked before use — https, or
+  # http only to loopback, no credentials in the URL, no query string.
+  base_url: ""
+  max_tokens: 1000
   # Roles the LLM is permitted to fill. Anything not listed is refused
   # by src/narrator.py regardless of what a caller asks for.
   permitted_roles:
@@ -211,4 +226,4 @@ llm:
     - "immediately or"
     - "guaranteed"
     - "act now or lose"
-  max_message_chars: 700
+  max_message_chars: 1000

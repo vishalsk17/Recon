@@ -4,31 +4,72 @@ bounded discount, chase an overdue invoice, escalate to a human, or
 deliberately do nothing — ranked by **expected net recovery**, constrained
 by hard financial and consent guardrails, and recorded in an **append-only,
 hash-chained audit trail**. Built for the Razorpay AI Buildathon, AI Revenue
-Recovery track. Code version 3.1.0, policy version 3.1.0.
+Recovery track.
+
+This version adds the optional narration layer (`src/narrator.py`): a strict
+LLM boundary that can draft customer-facing or reviewer-facing text only from
+precomputed fact sheets, never from raw event text or free-form prompts. The
+LLM is intentionally optional: the recovery pipeline continues to function
+without it, while narration remains a convenience layered on top.
+
+Code version: 3.1.0
+Policy version: 3.1.0
 
 Every claim below was checked by running the pipeline, not by reading the
 docstrings that describe it. Where a number appears, it was reproduced
 during this review, matched what `artifacts/verified_metrics.md` already
 recorded, and differed only by floating-point noise.
 
-## One command
+## Quick start
 
 ```bash
 pip install -r requirements.txt
 python run.py
 ```
 
-That's it. `run.py` generates the synthetic dataset, trains the
-models, runs a sweep over the held-out test split, scores the agent against
-baselines, verifies the audit chain, and opens the dashboard — skipping
-any step whose output already exists, so re-running it is safe and fast.
+That runs the synthetic-data generator, trains the models, executes the
+recovery sweep, verifies the audit chain, and opens the dashboard. It skips
+steps whose outputs already exist, so repeated runs stay fast and safe.
 
 ```bash
 python run.py --no-serve   # build everything, skip the dashboard
-python run.py --check      # verify the audit chain + run all tests
+python run.py --check      # verify the audit chain + run tests
 python run.py --force      # redo every step, including a fresh sweep
 python run.py --port 8080  # dashboard on a specific port
 ```
+
+### Optional LLM setup
+
+Narration is enabled only when a provider key is present in the OS
+environment. The project accepts several provider names and uses the
+`llm.provider` value in `config/policy.yaml` to pin a vendor or leave it as
+`auto`.
+
+PowerShell examples:
+
+```powershell
+$env:ANTHROPIC_API_KEY="sk-ant-..."
+# or
+$env:OPENAI_API_KEY="sk-..."
+# or for custom OpenAI-compatible gateways
+$env:LLM_API_KEY="..."
+$env:LLM_BASE_URL="https://your-gateway.example.com/v1/chat/completions"
+```
+
+The project accepts these variable names for the built-in providers:
+
+- ANTHROPIC_API_KEY
+- OPENAI_API_KEY
+- GEMINI_API_KEY / GOOGLE_API_KEY
+- GROQ_API_KEY
+- MISTRAL_API_KEY
+- DEEPSEEK_API_KEY
+- OPENROUTER_API_KEY
+- XAI_API_KEY
+- LLM_API_KEY (custom provider)
+
+The key itself is never written into the generated draft or stored in the
+recovery record.
 
 **Why re-running isn't the default behaviour of a bare command.** Two
 of these steps aren't idempotent the way a build step is:
@@ -185,17 +226,17 @@ is exactly why `run.py` treats an existing audit trail as
 ```mermaid
 flowchart TD
     DEC["Decision\nalready final — action, root cause,\nexpected recovery all decided"] --> FACT["Fact sheet\nplain-text summary of only what's\nin the decision record"]
-    FACT --> LLM["Claude\nvia narrator.py\nraw urllib.request, no SDK,\nno tool-calling"]
-    LLM --> VAL["validate_draft()\nrole allow-list · hallucinated-number check\n(numbers not in fact sheet, rejected)\nforbidden-phrase check (customer-facing roles only)\nlength / template-placeholder check"]
+    FACT --> LLM["Provider-selected model\nvia narrator.py\nstrict request/response boundary\nno function-calling, no side effects"]
+    LLM --> VAL["validate_draft()\nrole allow-list · hallucinated-number check\n(forbidden phrases and lengths checked too)"]
     VAL -->|fails any check| REJECT["DraftRejected\nno text returned"]
     VAL -->|passes| DRAFT["Draft returned to a human\nnever auto-dispatched"]
 ```
 
 The LLM renders already-decided facts into language; it cannot choose an
 action, invent a number absent from the source decision, or reach a
-customer directly. This project's own `tests/test_narrator.py` exercises
-this boundary with a mocked transport — see there for the specific cases
-it checks (hallucinated figures, forbidden phrases, out-of-scope roles).
+customer directly. This boundary is enforced by `src/narrator.py` and the
+matching tests in `tests/test_narrator.py`, which cover hallucinated
+figures, forbidden phrases, role restrictions, and safe prompt construction.
 
 ## Repository structure
 
@@ -209,8 +250,6 @@ data/
 
 src/
   schemas.py       -> closed action vocabulary; RiskEvent / Decision / ScoredAction.
-                       No cardholder data anywhere; ground-truth labels are
-                       structurally quarantined from the decision path.
   config.py        -> loads + freezes config/policy.yaml; every decision is
                        stamped with the policy_version that produced it
   ml/
@@ -218,40 +257,26 @@ src/
     features.py    -> shared train/serve feature encoding
     root_cause.py  -> why a payment failed / cart was abandoned / invoice is overdue
     uplift.py      -> P(recovered | event, action), one model per (surface, action)
-  economics.py     -> turns probabilities into expected net recovery (INR);
-                       proposes a ranking, cannot block anything
-  guardrails.py    -> the layer that can only ever say no: consent, quiet
-                       hours, retry/contact caps, sweep-wide budgets,
-                       approval gates. Never chooses; only vetoes or gates.
+  economics.py     -> turns probabilities into expected net recovery (INR)
+  guardrails.py    -> vetoes or gates actions: consent, quiet hours,
+                       retry/contact caps, sweep-wide budgets, approval gates
   tools.py         -> the fixed 5-step plan the agent walks for every event
   agent.py         -> orchestrates a sweep; CLI: run / pending / verify
-  audit.py         -> append-only, hash-chained JSONL store; execution
-                       ledger for idempotency and frequency caps
-  adapters/        -> per-surface simulated adapters (razorpay, messaging,
-                       invoicing); each re-checks consent/caps at the
-                       egress boundary; no live transport exists anywhere
-  narrator.py      -> the one place an LLM may speak; cannot choose or act
+  audit.py         -> append-only, hash-chained JSONL store; execution ledger
+  adapters/        -> simulated adapters for messaging, invoicing, and gateway calls
+  narrator.py      -> optional LLM narration layer; strict output validation + safe prompt construction
   service.py       -> business logic behind the dashboard API
   server.py        -> stdlib-only HTTP server serving the dashboard + API
-  benchmark.py     -> agent vs. baselines with bootstrapped confidence
-                       intervals; separates lawful from rule-breaking
-                       comparisons explicitly
-  web/index.html   -> the Recovery Command Centre dashboard (single file,
-                       no build step, no CDN dependency, CSP-hardened)
+  benchmark.py     -> agent vs. baselines with bootstrapped confidence intervals
+  web/index.html   -> Recovery Command Centre dashboard
 
-config/policy.yaml -> every tunable limit: discount caps, retry caps,
-                       contact frequency, quiet hours, auto-approve
-                       ceiling, confidence threshold. Loading is
-                       validated and refuses an unsafe config rather
-                       than accepting it.
+config/policy.yaml   -> tunable limits for discount caps, retry caps,
+                        contact frequency, quiet hours, auto-approve ceilings
 
-artifacts/         -> trained model JSON (no pickle), training_report.json,
-                       benchmark.json, verified_metrics.md
+artifacts/           -> trained model JSON, benchmark output, verification notes
 
-tests/             -> 264 tests: defensive posture, audit integrity,
-                       economics, guardrail policy, narrator boundary,
-                       server API. Run via `python run.py --check`
-                       or `python -m unittest discover -s tests -t .`
+tests/               -> defensive posture, audit integrity, economics,
+                        guardrail policy, narrator boundary, and server API checks
 ```
 
 ## Where the details actually live

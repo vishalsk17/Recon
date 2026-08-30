@@ -99,6 +99,10 @@ def health() -> dict[str, Any]:
         "kill_switch_engaged": C.kill_switch_engaged(cfg),
         "models_trained": have_models,
         "narration_available": narrator.available(cfg),
+        # Which vendor narration would use right now, or null. A name only —
+        # never a key, and never the endpoint, because a health endpoint is
+        # the first thing anyone reads and the last place a secret should be.
+        "narration_provider": narrator.configured_provider(cfg),
         "audit_records": len(A.AuditStore()),
     }
 
@@ -494,10 +498,11 @@ def narrate(decision_id: str, role: str) -> dict[str, Any]:
         raise ServiceError(404, f"no decision with id {decision_id!r}")
     if not N.available():
         raise ServiceError(
-            503, f"narration is unavailable: {N.ENV_KEY} is not set",
+            503, f"narration is unavailable: no LLM API key is set ({N.credentials_hint()})",
             {"why": "this build requires a real API key and has no template "
                     "fallback, so that nobody mistakes canned text for "
                     "generated text",
+             "providers": [p.name for p in N.PROVIDERS],
              "note": "the recovery pipeline does not need narration; "
                      "sweeps, approvals and the audit trail all work without it"},
         )
