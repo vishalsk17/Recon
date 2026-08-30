@@ -1,4 +1,5 @@
-# Revenue Recovery Agent
+# Recon
+
 An agent that decides whether to retry a failed payment, wait, offer a
 bounded discount, chase an overdue invoice, escalate to a human, or
 deliberately do nothing — ranked by **expected net recovery**, constrained
