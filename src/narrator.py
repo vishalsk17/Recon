@@ -521,7 +521,7 @@ def resolve(cfg: Optional[Mapping[str, Any]] = None,
         if not key:
             # Named explicitly and absent: refuse rather than falling through to
             # another vendor. Quietly using a different provider than the one
-            # configured is the kind of surprise this project exists to avoid
+            # configured is the kind of surprise this project exists to avoid.
             raise MissingCredentials(
                 f"llm.provider is pinned to {provider.name!r} but "
                 f"{' / '.join(provider.env_keys)} is not set. Narration requires a "
